@@ -4,6 +4,8 @@ import { Viewer } from './viewer.js';
 import { WinkCamera } from './wink-camera.js';
 import { initSettings } from './settings-ui.js';
 import { describePdfError } from './pdfdoc.js';
+import { takeRedirectResult } from './gdrive-auth.js';
+import { initDriveTest } from './drive-test.js';
 import { $, icon, toast, promptDialog } from './ui.js';
 
 const LAST_VIEW_KEY = 'ms:lastView';
@@ -14,6 +16,7 @@ let viewer;
 let camera;
 let library;
 let settingsUi;
+let driveTest;
 let viewerActive = false;
 let settingsOpen = false;
 let barTimer = 0;
@@ -295,10 +298,25 @@ function setupServiceWorker() {
   }).catch((e) => console.warn('Service worker registration failed', e));
 }
 
+// ---------- Google sign-in ----------
+
+// Google's answer landed in the sign-in sheet shown over the Home Screen app,
+// not in the app itself. The app picks the sign-in up when the sheet closes.
+function showSignInNote(result) {
+  const note = document.createElement('div');
+  note.className = 'signin-note';
+  note.innerHTML = result.ok
+    ? '<h2>Signed in to Google</h2><p>Tap <b>Done</b> at the top of the screen to go back to Music Stand.</p>'
+    : '<h2>Google sign-in didn’t finish</h2><p>Tap <b>Done</b> at the top of the screen to go back to Music Stand, then try again.</p>';
+  document.body.appendChild(note);
+}
+
 // ---------- Boot ----------
 
 async function main() {
   injectIcons();
+  // Before routing: the address may hold Google's answer to a sign-in.
+  const signIn = takeRedirectResult();
   await loadSettings();
 
   const applyDisplay = () => document.documentElement.classList.toggle('night', getSettings().nightMode);
@@ -316,9 +334,11 @@ async function main() {
     camera,
     onOpenChange: (open) => {
       settingsOpen = open;
+      if (open) driveTest.prepare();
       if (viewerActive) (open ? showBar(false) : showBar());
     },
   });
+  driveTest = initDriveTest();
   $('#lib-settings').addEventListener('click', () => settingsUi.open());
 
   // Restoring a backup can remove the score that's open.
@@ -337,10 +357,31 @@ async function main() {
     }
   });
   window.addEventListener('pagehide', () => viewer.flushPosition());
-  window.addEventListener('hashchange', route);
+  window.addEventListener('hashchange', async () => {
+    // Google's answer can also reach the running app as a jump within the
+    // page, without a reload.
+    const result = takeRedirectResult();
+    await route();
+    if (result) {
+      settingsUi.open();
+      driveTest.reportRedirect({ ...result, withoutReload: true });
+    }
+  });
+
+  if (signIn && signIn.inSheet) {
+    // This copy of the app is running in Google's sign-in sheet: show only
+    // the note, not the score (and its camera) or Settings.
+    driveTest.reportRedirect(signIn);
+    showSignInNote(signIn);
+    return;
+  }
 
   resumeLastView();
   await route();
+  if (signIn) {
+    settingsUi.open();
+    driveTest.reportRedirect(signIn);
+  }
   setupServiceWorker();
   requestPersistence();
 

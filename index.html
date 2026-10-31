@@ -164,6 +164,24 @@
         <label class="toggle"><span>Keep screen awake<small>While a score is open.</small></span><input type="checkbox" id="s-awake"></label>
       </section>
 
+      <section class="group" id="drive-test">
+        <h3>Google Drive (test)</h3>
+        <p class="hint">Checks how Google sign-in and Drive work on this device. It doesn’t touch your library. When you’re done, tap Copy report and send it to whoever is setting up sync.</p>
+        <div id="d-status" class="status-line"></div>
+        <div class="row wrap">
+          <button id="d-popup" type="button" class="btn small">1. Sign in (pop-up)</button>
+          <button id="d-redirect" type="button" class="btn small">2. Sign in (redirect)</button>
+          <button id="d-silent" type="button" class="btn small">3. Renew silently</button>
+          <button id="d-drive" type="button" class="btn small">4. Test Drive</button>
+        </div>
+        <div class="row wrap">
+          <button id="d-copy" type="button" class="btn small primary">Copy report</button>
+          <button id="d-clear" type="button" class="btn small">Clear report</button>
+          <button id="d-signout" type="button" class="btn small">Sign out</button>
+        </div>
+        <pre id="d-log" class="drive-log" hidden></pre>
+      </section>
+
       <section class="group">
         <h3>Backup</h3>
         <p class="hint">Your library lives only on this device. Export a backup now and then and save it to Files or iCloud Drive. To copy your library to another device, import the backup there and choose Merge.</p>
