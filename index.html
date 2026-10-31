@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Music Stand</title>
+  <meta name="description" content="A personal sheet music reader with wink page turning.">
+  <meta name="theme-color" content="#16181c">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Music Stand">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="modulepreload" href="vendor/pdfjs/pdf.min.mjs">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+  <!-- ============ Library ============ -->
+  <section id="library" class="view" hidden>
+    <header class="topbar">
+      <div class="brand"><img src="icons/icon.svg" alt="" width="30" height="30"><span>Music Stand</span></div>
+      <label class="search"><span data-icon="search"></span><input id="lib-search" type="search" placeholder="Search" autocomplete="off" autocorrect="off" spellcheck="false"></label>
+      <select id="lib-sort" class="select" aria-label="Sort">
+        <option value="recent">Recent</option>
+        <option value="name">Name</option>
+        <option value="added">Date added</option>
+      </select>
+      <button id="lib-add" class="btn primary"><span data-icon="plus"></span>Add PDF</button>
+      <button id="lib-settings" class="icon-btn" aria-label="Settings"><span data-icon="gear"></span></button>
+    </header>
+    <div id="update-banner" class="banner" hidden>
+      A new version of Music Stand is ready.
+      <button id="update-reload" class="btn small primary">Update now</button>
+    </div>
+    <main class="lib-scroll">
+      <div id="lib-grid" class="grid"></div>
+      <div id="lib-empty" class="empty" hidden>
+        <div class="empty-art"><span data-icon="file"></span></div>
+        <h2>Your music, on your iPad</h2>
+        <p>Add PDF scores from Files. They're stored on this device and work offline.</p>
+        <button id="lib-add-empty" class="btn primary large"><span data-icon="plus"></span>Add PDF</button>
+      </div>
+      <div id="lib-noresults" class="empty small" hidden><p>No scores match your search.</p></div>
+    </main>
+    <input id="file-input" type="file" accept="application/pdf,.pdf" multiple hidden>
+    <div id="drop-hint" class="drop-hint" hidden>Drop PDFs to add them</div>
+  </section>
+
+  <!-- ============ Viewer ============ -->
+  <section id="viewer" class="view" hidden>
+    <div class="scroller">
+      <div class="pages"><div class="guide"></div></div>
+    </div>
+
+    <header class="vbar">
+      <button id="v-back" class="icon-btn" aria-label="Back to library"><span data-icon="back"></span></button>
+      <div id="v-title" class="vtitle"></div>
+      <button id="v-page" class="chip" aria-label="Go to page">– / –</button>
+      <div class="zoom" role="group" aria-label="Zoom">
+        <button id="v-zoom-out" class="icon-btn" aria-label="Zoom out"><span data-icon="minus"></span></button>
+        <span id="v-zoom" class="zoom-val">100%</span>
+        <button id="v-zoom-in" class="icon-btn" aria-label="Zoom in"><span data-icon="plus"></span></button>
+      </div>
+      <button id="v-wink" class="icon-btn wink-btn" aria-label="Wink control" aria-pressed="false"><span data-icon="eye"></span><i class="dot"></i></button>
+      <button id="v-settings" class="icon-btn" aria-label="Settings"><span data-icon="gear"></span></button>
+    </header>
+
+    <div id="v-pill" class="pagepill"></div>
+
+    <div id="wink-hud" class="wink-hud off" aria-hidden="true">
+      <svg viewBox="0 0 40 40"><circle class="track" cx="20" cy="20" r="16"/><circle class="prog" cx="20" cy="20" r="16"/></svg>
+      <span data-icon="eye"></span>
+    </div>
+
+    <div id="flash-fwd" class="flash fwd" aria-hidden="true"><span data-icon="down"></span></div>
+    <div id="flash-back" class="flash back" aria-hidden="true"><span data-icon="up"></span></div>
+  </section>
+
+  <video id="cam" class="cam" playsinline muted></video>
+
+  <!-- ============ Settings ============ -->
+  <dialog id="settings" class="sheet">
+    <header class="sheet-head">
+      <h2>Settings</h2>
+      <button id="settings-close" class="btn">Done</button>
+    </header>
+    <div class="sheet-body">
+
+      <section class="group">
+        <h3>Page turning</h3>
+        <div class="slider">
+          <div class="row"><label for="s-amount">Scroll amount</label><output id="s-amount-out"></output></div>
+          <input type="range" id="s-amount" min="30" max="100" step="5">
+          <small>How much of the screen each turn moves.</small>
+        </div>
+        <div class="slider">
+          <div class="row"><label for="s-duration">Scroll animation</label><output id="s-duration-out"></output></div>
+          <input type="range" id="s-duration" min="0" max="1000" step="50">
+        </div>
+        <label class="toggle"><span>Reading guide<small>Briefly marks where the old edge of the screen moved to.</small></span><input type="checkbox" id="s-guide"></label>
+        <label class="toggle"><span>Tap to turn<small>Tap the bottom third to go forward, the top third to go back, the middle for the toolbar.</small></span><input type="checkbox" id="s-tap"></label>
+        <p class="hint">Bluetooth page-turner pedals and arrow / Page Up / Page Down keys also work.</p>
+      </section>
+
+      <section class="group">
+        <h3>Wink control</h3>
+        <label class="toggle"><span>Turn pages by winking<small>Uses the front camera while a score is open. Video stays on this iPad and is never recorded.</small></span><input type="checkbox" id="s-wink"></label>
+        <div class="row">
+          <span>Wink to go forward</span>
+          <div class="seg" id="s-fwd-eye" role="radiogroup">
+            <button type="button" data-v="left" role="radio">Left eye</button>
+            <button type="button" data-v="right" role="radio">Right eye</button>
+          </div>
+        </div>
+        <label class="toggle"><span>Other eye goes back<small>Turn off if you can only wink one eye.</small></span><input type="checkbox" id="s-wink-back"></label>
+        <div class="slider">
+          <div class="row"><label for="s-sens">Sensitivity</label><output id="s-sens-out"></output></div>
+          <input type="range" id="s-sens" min="1" max="10" step="1">
+          <small>Higher registers lighter winks; lower ignores more squints.</small>
+        </div>
+        <div class="slider">
+          <div class="row"><label for="s-hold">Hold time</label><output id="s-hold-out"></output></div>
+          <input type="range" id="s-hold" min="80" max="700" step="20">
+          <small>How long to hold the wink. Longer ignores more blinks and twitches.</small>
+        </div>
+        <div class="row">
+          <label for="s-fps">Camera rate</label>
+          <select id="s-fps" class="select">
+            <option value="12">Battery saver</option>
+            <option value="20">Normal</option>
+            <option value="30">Responsive</option>
+          </select>
+        </div>
+        <label class="toggle"><span>Show camera preview</span><input type="checkbox" id="s-preview"></label>
+
+        <div class="tester">
+          <div class="row">
+            <strong>Test &amp; tune</strong>
+            <button id="t-start" type="button" class="btn small">Start test</button>
+          </div>
+          <div id="t-body" hidden>
+            <div id="t-status" class="status-line"></div>
+            <div class="meters">
+              <div class="meter" id="m-left"><div class="bar"><div class="fill"></div><div class="thresh"></div></div><span>Left eye</span></div>
+              <div class="meter" id="m-right"><div class="bar"><div class="fill"></div><div class="thresh"></div></div><span>Right eye</span></div>
+              <div id="t-event" class="t-event"></div>
+            </div>
+            <p class="hint">Wink your <b>left</b> eye and the left bar should rise past the line. If the other bar rises, tap Calibrate.</p>
+            <div class="row">
+              <button id="t-calibrate" type="button" class="btn small">Calibrate eyes</button>
+              <label class="toggle inline"><span>Swap left/right</span><input type="checkbox" id="s-swap"></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="group">
+        <h3>Display</h3>
+        <label class="toggle"><span>Night mode<small>Shows pages as light ink on dark paper.</small></span><input type="checkbox" id="s-night"></label>
+        <label class="toggle"><span>Keep screen awake<small>While a score is open.</small></span><input type="checkbox" id="s-awake"></label>
+      </section>
+
+      <section class="group">
+        <h3>Backup</h3>
+        <p class="hint">Your library lives only on this iPad. Export a backup now and then and save it to Files or iCloud Drive.</p>
+        <div class="row wrap">
+          <button id="b-export" type="button" class="btn">Export backup</button>
+          <button id="b-save" type="button" class="btn primary" hidden>Save backup file</button>
+          <button id="b-import" type="button" class="btn">Import backup…</button>
+        </div>
+        <div id="b-status" class="hint"></div>
+        <input id="b-file" type="file" accept=".zip,application/zip" hidden>
+        <p id="storage-info" class="hint"></p>
+      </section>
+
+      <p class="about">Music Stand <span id="app-version"></span></p>
+    </div>
+  </dialog>
+
+  <dialog id="modal" class="modal"></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
