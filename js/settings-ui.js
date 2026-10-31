@@ -1,7 +1,7 @@
 // Settings sheet: page turning, wink control (with live test + calibration),
 // display, and backup.
 import { getSettings, updateSettings, storageEstimate, requestPersistence } from './data.js';
-import { exportBackup, inspectBackup, importBackup, saveFile, backupFilename } from './backup.js';
+import { exportBackup, inspectBackup, previewImport, importBackup, saveFile, backupFilename } from './backup.js';
 import { thresholds } from './wink-logic.js';
 import { $, toast, actionSheet, formatBytes } from './ui.js';
 
@@ -164,6 +164,14 @@ export function initSettings({ camera, onOpenChange }) {
 
   // ---- Backup ----
 
+  const scores = (n) => `${n} ${n === 1 ? 'score' : 'scores'}`;
+  function describeBackup({ scores: n, fresh }) {
+    if (!n) return 'This backup has no scores.';
+    if (fresh === n) return `${scores(n)}, ${n === 1 ? 'new' : 'all new'} to this device.`;
+    if (!fresh) return `${scores(n)}, ${n === 1 ? 'already' : 'all already'} on this device.`;
+    return `${scores(n)}, ${fresh} new to this device.`;
+  }
+
   const bStatus = $('#b-status');
   const bExport = $('#b-export');
   const bSave = $('#b-save');
@@ -183,7 +191,7 @@ export function initSettings({ camera, onOpenChange }) {
       bSave.hidden = false;
     } catch (e) {
       console.warn(e);
-      bStatus.textContent = `Export failed: ${e.message || e}`;
+      bStatus.textContent = `Export failed: ${(e && e.message) || String(e)}`;
     } finally {
       bExport.disabled = false;
     }
@@ -207,26 +215,30 @@ export function initSettings({ camera, onOpenChange }) {
     if (!file) return;
     try {
       const backup = await inspectBackup(file);
-      const n = (backup.manifest.files || []).length;
       const when = backup.manifest.exportedAt ? new Date(backup.manifest.exportedAt).toLocaleString() : 'unknown date';
       const mode = await actionSheet({
-        title: `Backup from ${when} with ${n} ${n === 1 ? 'score' : 'scores'}`,
+        title: `Backup from ${when}`,
+        message: `${describeBackup(await previewImport(backup))} ` +
+          'Merge adds what’s missing and keeps this device’s settings. Replace makes this device match the backup.',
         actions: [
           { label: 'Merge into my library', value: 'merge' },
-          { label: 'Replace everything on this iPad', value: 'replace', danger: true },
+          { label: 'Replace everything on this device', value: 'replace', danger: true },
         ],
       });
       if (!mode) return;
-      const res = await importBackup(backup, { replace: mode === 'replace' }, (i, total, name) => {
+      const replace = mode === 'replace';
+      const res = await importBackup(backup, { replace }, (i, total, name) => {
         bStatus.textContent = total ? `Importing ${i} of ${total}${name ? ` (${name})` : ''}…` : 'Importing…';
       });
       sync();
-      bStatus.textContent = `Imported ${res.files} ${res.files === 1 ? 'score' : 'scores'}.`;
+      const already = res.here ? ` ${res.here} ${res.here === 1 ? 'was' : 'were'} already on this device.` : '';
+      if (replace) bStatus.textContent = `Restored ${scores(res.added)}.`;
+      else bStatus.textContent = res.added ? `Added ${scores(res.added)}.${already}` : `Nothing new to add.${already}`;
       toast('Backup imported.');
       updateStorage();
     } catch (e) {
       console.warn(e);
-      bStatus.textContent = `Import failed: ${e.message || e}`;
+      bStatus.textContent = `Import failed: ${(e && e.message) || String(e)}`;
     }
   });
 

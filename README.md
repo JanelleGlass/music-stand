@@ -37,8 +37,22 @@ and never recorded or sent anywhere.
 - Zoom (50 to 100% of the screen width), night mode (light notes on dark pages),
   and keep-screen-awake.
 - **Backup**: Settings › Backup › Export creates one `.zip` with all PDFs and
-  data (save it to Files or iCloud Drive). Import merges it in or replaces everything.
-  The zip is a normal archive; you can open it on a computer to get your PDFs back.
+  data (save it to Files or iCloud Drive). The zip is a normal archive; you can
+  open it on a computer to get your PDFs back. Importing offers two choices:
+  - **Merge** adds the scores this device doesn't have. A score that's already
+    here (the same PDF, even if it was added separately on each device) isn't
+    added twice; it keeps this device's copy and reading place. This device's
+    settings are left alone.
+  - **Replace** makes this device match the backup, settings included, except
+    for this device's eye calibration (which depends on its camera).
+
+### Using more than one device
+
+Each device keeps its own library; nothing is stored on the website. To copy
+your library to another iPad (or a computer), export a backup, save it to
+iCloud Drive, then on the other device open Music Stand and import it with
+**Merge**. Repeat whenever you've added music on one device that you want on
+the other.
 
 ## Put it on GitHub Pages
 
@@ -117,9 +131,10 @@ js/wink-logic.js             wink detection state machine (no DOM, unit tested)
 js/wink-camera.js            camera + MediaPipe → wink events
 js/data.js, js/db.js         IndexedDB storage
 js/backup.js, js/zip.js      backup export/import
+js/merge.js                  rules for merging a backup into the library (unit tested)
 sw.js, manifest.webmanifest  offline + Home Screen install
 vendor/                      PDF.js 4.10.38 (legacy build), MediaPipe tasks-vision 0.10.21, face model
-tests/                       node --test tests/wink-logic.test.mjs
+tests/                       node --test tests/wink-logic.test.mjs tests/merge.test.mjs
 ```
 
 The storage already has places for Phase 2 (annotations per page) and Phase 3

@@ -1,4 +1,4 @@
-// Run with: node --test tests/
+// Run with: node --test tests/wink-logic.test.mjs
 // Feeds synthetic eye-closure curves through the wink detector.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

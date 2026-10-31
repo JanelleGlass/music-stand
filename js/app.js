@@ -1,4 +1,4 @@
-import { loadSettings, getSettings, updateSettings, onSettings, getFile, touchFile, requestPersistence } from './data.js';
+import { loadSettings, getSettings, updateSettings, onSettings, onLibraryChange, getFile, touchFile, requestPersistence } from './data.js';
 import { initLibrary } from './library.js';
 import { Viewer } from './viewer.js';
 import { WinkCamera } from './wink-camera.js';
@@ -320,6 +320,13 @@ async function main() {
     },
   });
   $('#lib-settings').addEventListener('click', () => settingsUi.open());
+
+  // Restoring a backup can remove the score that's open.
+  onLibraryChange(async () => {
+    if (!viewerActive || !viewer.key || (await getFile(viewer.key))) return;
+    viewer.key = null; // no reading place to save for it
+    go('#/');
+  });
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {

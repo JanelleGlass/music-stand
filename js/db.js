@@ -56,7 +56,8 @@ function wrap(req) {
 function done(tx) {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    // tx.error is still null while a failed request's error is bubbling.
+    tx.onerror = (e) => reject((e && e.target && e.target.error) || tx.error || new Error('Saving to the database failed'));
     tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
   });
 }

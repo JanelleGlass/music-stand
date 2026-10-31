@@ -42,6 +42,14 @@ export function updateSettings(patch) {
   for (const fn of settingsListeners) fn(settings, patch);
 }
 
+// Swaps in a whole set of settings (restoring a backup) and tells everyone.
+export async function replaceSettings(next) {
+  clearTimeout(saveTimer);
+  settings = { ...DEFAULT_SETTINGS, ...(next || {}) };
+  await db.put('kv', settings, 'settings');
+  for (const fn of settingsListeners) fn(settings, { ...settings });
+}
+
 export function onSettings(fn) {
   settingsListeners.add(fn);
   return () => settingsListeners.delete(fn);
@@ -63,7 +71,7 @@ export function newId() {
   return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }
 
-async function sha256(buf) {
+export async function sha256(buf) {
   if (!crypto.subtle) return null;
   const h = await crypto.subtle.digest('SHA-256', buf);
   return Array.from(new Uint8Array(h), (b) => b.toString(16).padStart(2, '0')).join('');

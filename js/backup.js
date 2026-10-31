@@ -2,7 +2,8 @@
 // annotations, lists) plus every PDF under files/.
 import * as db from './db.js';
 import { ZipWriter, ZipReader } from './zip.js';
-import { loadSettings, notifyLibraryChange } from './data.js';
+import { getSettings, replaceSettings, notifyLibraryChange, sha256 } from './data.js';
+import { planFiles, summarise, recordsToWrite, restoredSettings } from './merge.js';
 
 const FORMAT = 1;
 
@@ -46,47 +47,106 @@ export async function exportBackup(onProgress = () => {}) {
   return zip.finish();
 }
 
+// Every PDF the manifest lists must be in the archive.
+function checkFiles(zip, files) {
+  if (!Array.isArray(files)) throw new Error('This backup is damaged: its list of scores is unreadable.');
+  for (const f of files) {
+    if (!f || !f.id || !f.path || !zip.has(f.path)) throw new Error('This backup is damaged: a PDF listed in it is missing.');
+  }
+}
+
 // Reads a backup's manifest so the UI can describe it before importing.
 export async function inspectBackup(file) {
   const zip = await ZipReader.open(file);
   if (!zip.has('manifest.json')) throw new Error('This ZIP is not a Music Stand backup (no manifest.json).');
   const manifest = JSON.parse(await zip.text('manifest.json'));
-  if (manifest.app !== 'music-stand') throw new Error('This ZIP is not a Music Stand backup.');
+  if (!manifest || manifest.app !== 'music-stand') throw new Error('This ZIP is not a Music Stand backup.');
   if (manifest.format > FORMAT) throw new Error('This backup was made by a newer version of the app. Update the app first.');
+  checkFiles(zip, manifest.files || []);
   return { zip, manifest };
 }
 
-// replace: wipe everything first. Otherwise merge; items in the backup
-// overwrite items with the same id.
-export async function importBackup({ zip, manifest }, { replace }, onProgress = () => {}) {
-  if (replace) {
-    for (const s of db.ALL_STORES) await db.clear(s);
+const RECORD_STORES = ['positions', 'annotations', 'lists'];
+
+// This device's files that can stand in for a backup's copy (those whose PDF
+// is actually stored). Works out missing content hashes for files the backup
+// could match (same size), so they can be recognised.
+async function localFiles(backupFiles) {
+  const stored = new Set(await db.getAllKeys('blobs'));
+  const sizes = new Set(backupFiles.map((f) => f.size));
+  const out = [];
+  for (const f of await db.getAll('files')) {
+    if (!stored.has(f.id)) continue;
+    if (!f.hash && sizes.has(f.size)) {
+      const blob = await db.get('blobs', f.id);
+      const hash = blob && (await sha256(await blob.arrayBuffer()));
+      if (hash) {
+        f.hash = hash;
+        await db.put('files', f);
+      }
+    }
+    out.push(f);
   }
+  return out;
+}
+
+function plan(zip, files, local) {
+  return planFiles(files, local, async (f) => sha256(await (await zip.read(f.path)).arrayBuffer()));
+}
+
+// What importing would find: { scores, fresh, here } (see summarise).
+export async function previewImport({ zip, manifest }) {
   const files = manifest.files || [];
-  for (let i = 0; i < files.length; i++) {
-    const { path, ...meta } = files[i];
-    onProgress(i, files.length, meta.name);
-    const part = await zip.read(path, 'application/pdf');
+  return summarise(await plan(zip, files, await localFiles(files)));
+}
+
+// Merge (the default) adds the scores this device doesn't have. A score that
+// is already here, matched by id or by identical content, keeps this device's
+// copy. The backup's reading places and notes for it move onto that copy only
+// where this device has none: a record already here is kept unless both carry
+// updatedAt and the backup's is newer (reading places don't, so this device's
+// always wins). This device's settings are left alone.
+// Replace makes this device a copy of the backup, apart from its own eye
+// calibration.
+export async function importBackup({ zip, manifest }, { replace }, onProgress = () => {}) {
+  const files = manifest.files || [];
+  checkFiles(zip, files); // before changing anything
+  const steps = await plan(zip, files, replace ? [] : await localFiles(files));
+  if (replace) {
+    // Settings (kv) are swapped in at the end instead, so a failed import keeps them.
+    for (const s of db.ALL_STORES) if (s !== 'kv') await db.clear(s);
+  }
+
+  const remap = new Map(); // backup file id → id of the same score here
+  for (let i = 0; i < steps.length; i++) {
+    const { file, same } = steps[i];
+    onProgress(i, steps.length, file.name);
+    if (same) {
+      if (same !== file.id) remap.set(file.id, same);
+      continue;
+    }
+    const { path, ...meta } = file;
     // Materialise the bytes so the stored Blob doesn't depend on the picked file.
-    const blob = new Blob([await part.arrayBuffer()], { type: 'application/pdf' });
+    const bytes = await (await zip.read(path, 'application/pdf')).arrayBuffer();
+    const blob = new Blob([bytes], { type: 'application/pdf' });
     await db.transact(['files', 'blobs', 'thumbs'], (s) => {
       s.files.put(meta);
       s.blobs.put(blob, meta.id);
       s.thumbs.delete(meta.id); // regenerated lazily
     });
   }
-  await db.transact(['positions', 'annotations', 'lists'], (s) => {
-    for (const p of manifest.positions || []) s.positions.put(p);
-    for (const a of manifest.annotations || []) s.annotations.put(a);
-    for (const l of manifest.lists || []) s.lists.put(l);
+
+  const writes = {};
+  for (const s of RECORD_STORES) writes[s] = recordsToWrite(await db.getAll(s), manifest[s], remap);
+  await db.transact(RECORD_STORES, (s) => {
+    for (const name of RECORD_STORES) for (const r of writes[name]) s[name].put(r);
   });
-  if (manifest.settings) {
-    await db.put('kv', manifest.settings, 'settings');
-    await loadSettings();
-  }
-  onProgress(files.length, files.length, '');
+  // Read the calibration now, not at the start: it may have been redone meanwhile.
+  if (replace) await replaceSettings(restoredSettings(manifest.settings, getSettings()));
+  onProgress(steps.length, steps.length, '');
   notifyLibraryChange();
-  return { files: files.length };
+  const { fresh, here } = summarise(steps);
+  return { added: fresh, here };
 }
 
 // Hands the file to the iPad share sheet ("Save to Files"), or downloads it.

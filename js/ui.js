@@ -112,10 +112,10 @@ export function promptDialog({ title, value = '', placeholder = '', ok = 'OK', t
 }
 
 // actions: [{ label, value, danger }]
-export function actionSheet({ title, actions }) {
+export function actionSheet({ title, message = '', actions }) {
   return openModal((dlg, finish) => {
     dlg.innerHTML = `
-      <div class="modal-body">${title ? `<h2>${esc(title)}</h2>` : ''}</div>
+      <div class="modal-body">${title ? `<h2>${esc(title)}</h2>` : ''}${message ? `<p>${esc(message)}</p>` : ''}</div>
       <div class="sheet-actions">
         ${actions.map((a, i) => `<button class="btn ${a.danger ? 'danger' : ''}" data-i="${i}">${esc(a.label)}</button>`).join('')}
         <button class="btn" data-i="-1">Cancel</button>
