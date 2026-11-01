@@ -61,7 +61,7 @@ export function initSettings({ camera, onOpenChange, aroundImport = (fn) => fn()
     const paged = getSettings().turnMode === 'page';
     for (const b of mode.querySelectorAll('button')) b.setAttribute('aria-checked', String((b.dataset.v === 'page') === paged));
     $('#s-mode-note').textContent = paged
-      ? 'Each turn shows the next whole page, sized to fit the screen. Swipe up or left for the next page.'
+      ? 'Each page fits the screen and turns like a book’s. Drag a page to the left, or swipe up, for the next one.'
       : 'The music is one long strip. Each turn moves part of the screen, and you can scroll freely.';
     for (const el of dlg.querySelectorAll('.scroll-only')) el.hidden = paged;
   });

@@ -1,7 +1,7 @@
 // Run with: node --test tests/paging.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fitPage, pageAt, settlePage, sideSwipe, FLICK, DRAG_SHARE, SIDE_MIN } from '../js/paging.js';
+import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes, leafAngle, SWIPE_MIN, FLICK, FLIP_SHARE } from '../js/paging.js';
 
 test('a portrait page on a portrait screen fills the width', () => {
   // US Letter on an iPad Air in portrait (820 × 1156 below the status bar, 8 px margins).
@@ -31,40 +31,36 @@ test('pageAt rounds to the nearest slot and stays in range', () => {
   assert.equal(pageAt(500, 0, 5), 0); // no layout yet
 });
 
-const slot = 1000;
-const at = (moved, velocity, base = 2, count = 5) => settlePage({ base, count, moved, slot, velocity });
-
-test('a small slow drag springs back to the same page', () => {
-  assert.equal(at(slot * DRAG_SHARE - 1, 0), 2);
-  assert.equal(at(-(slot * DRAG_SHARE - 1), 0), 2);
+test('swipes up or left go forward, down or right go back, short ones do nothing', () => {
+  assert.equal(swipeTurn(-(SWIPE_MIN + 1)), 1);
+  assert.equal(swipeTurn(SWIPE_MIN + 1), -1);
+  assert.equal(swipeTurn(SWIPE_MIN - 1), 0);
+  assert.equal(swipeTurn(-(SWIPE_MIN - 1)), 0);
 });
 
-test('a slow drag past the share turns one page', () => {
-  assert.equal(at(slot * DRAG_SHARE + 1, 0), 3);
-  assert.equal(at(-(slot * DRAG_SHARE + 1), 0), 1);
+test('a page follows the finger across its width', () => {
+  assert.equal(flipProgress(1, -400, 800), 0.5); // forward: finger moves left
+  assert.equal(flipProgress(-1, 400, 800), 0.5); // back: finger moves right
+  assert.equal(flipProgress(1, 100, 800), 0); // the wrong way doesn't turn it
+  assert.equal(flipProgress(1, -2000, 800), 1); // no further than over
+  assert.equal(flipProgress(1, -100, 0), 0);
 });
 
-test('a quick flick turns one page even when it moved only a little', () => {
-  assert.equal(at(30, FLICK + 0.1), 3);
-  assert.equal(at(-30, -(FLICK + 0.1)), 1);
+test('a page let go slowly finishes once it is far enough over', () => {
+  assert.equal(flipCompletes(FLIP_SHARE + 0.01, 0), true);
+  assert.equal(flipCompletes(FLIP_SHARE - 0.01, 0), false);
 });
 
-test('a long drag still turns only one page', () => {
-  assert.equal(at(slot * 0.95, 2), 3);
+test('a flick decides however far the page is over', () => {
+  assert.equal(flipCompletes(0.05, FLICK + 0.1), true);
+  assert.equal(flipCompletes(0.9, -(FLICK + 0.1)), false);
 });
 
-test('dragging forward and flicking back stays on the page', () => {
-  assert.equal(at(slot * 0.5, -1), 2);
-});
-
-test('there is no page before the first or after the last', () => {
-  assert.equal(at(-slot * 0.5, -1, 0), 0);
-  assert.equal(at(slot * 0.5, 1, 4), 4);
-});
-
-test('sideways swipes turn like a book', () => {
-  assert.equal(sideSwipe(-(SIDE_MIN + 1)), 1);
-  assert.equal(sideSwipe(SIDE_MIN + 1), -1);
-  assert.equal(sideSwipe(SIDE_MIN - 1), 0);
-  assert.equal(sideSwipe(-(SIDE_MIN - 1)), 0);
+test('the page turns about its left edge, over to the left', () => {
+  assert.equal(leafAngle(1, 0), -0);
+  assert.equal(leafAngle(1, 0.5), -90);
+  assert.equal(leafAngle(1, 1), -180);
+  // Back: the previous page comes over from the left.
+  assert.equal(leafAngle(-1, 0), -180);
+  assert.equal(leafAngle(-1, 1), -0);
 });

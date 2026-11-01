@@ -57,14 +57,20 @@ icon shows which one is on), and the score stays on the page you're reading.
 - **Scroll** (the default) is the continuous strip described above: each turn
   moves part of the screen (Scroll amount), and you can scroll freely.
 - **One at a time** shows each page whole, as large as fits the screen, and
-  every turn (wink, tap, pedal or key) goes exactly one page. Swipe up or left
-  for the next page, down or right for the one before. The page follows your
-  finger and settles on a page when you let go, never more than one page per
-  swipe. A mouse wheel or trackpad also goes one page per push. Turn animation
-  0 makes the pages switch instantly.
+  every turn (wink, tap, pedal or key) goes exactly one page. The page turns
+  like a book's: it lifts at the right and turns over to the left, showing
+  the next page beneath; going back, the previous page turns back over from
+  the left. Turns that come while a page is turning (two quick winks) follow
+  one after the other.
+- Drag a page to the left and it turns under your finger. Let go past about
+  a third of the way (or flick it) and it finishes turning; otherwise it
+  falls back. Drag to the right for the page before. A swipe up or down also
+  turns a page, and a mouse wheel or trackpad turns one page per push.
+- Turn animation sets how long a page takes to turn; 0 switches pages
+  instantly.
 - In landscape, one at a time shows the page full height with the stage on
   either side. Zoom is for scrolling, so its buttons hide in this mode.
-- With *Write with a finger* on, two fingers turn the pages one at a time too.
+- With *Write with a finger* on, a two-finger swipe turns the page.
 
 ## Markings, favorites and folders (Phase 2)
 
@@ -227,7 +233,8 @@ If you replace anything in `vendor/`, also bump `LIB_CACHE` in `sw.js`.
 index.html, css/app.css      UI
 js/app.js                    startup, routing, wink → page turn, keys, wake lock
 js/viewer.js                 PDF viewer: scrolling or one page at a time (lazy rendering, animated turns, swipes)
-js/paging.js                 one page at a time: page fitting and where a swipe lands (unit tested)
+js/paging.js                 one page at a time: page fitting, swipes, how far a page has turned (unit tested)
+js/flip.js                   a page turning like a book's, drawn over the music
 js/library.js                library screen, favorites and folders bar
 js/lists.js                  favorites and folders (data)
 js/ink.js, js/ink-draw.js    writing on the music: Pencil input, SVG layers, eraser

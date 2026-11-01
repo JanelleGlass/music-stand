@@ -7,12 +7,14 @@
 //
 // One page at a time ("paged") keeps the same vertical strip, but every page
 // gets a slot one screen tall and is sized to fit in it (js/paging.js). The
-// music can't be scrolled freely then: a turn moves one slot, and a finger
-// drag follows the music and settles on a page when it lets go.
+// music can't be scrolled freely then: a turn jumps one slot, and copies of
+// the pages turn over it like a book's (js/flip.js). A sideways drag turns
+// the page under the finger.
 import { openPdf, isCancel } from './pdfdoc.js';
 import { getFile, getFileBlob, getPosition, savePosition, getSettings } from './data.js';
 import { Ink } from './ink.js';
-import { fitPage, pageAt, settlePage, sideSwipe } from './paging.js';
+import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes } from './paging.js';
+import { Flip } from './flip.js';
 
 const GAP = 10;                 // px between pages
 const PAD = 8;                  // px above the first and below the last page
@@ -21,6 +23,7 @@ const MAX_PIXELS = 10_000_000;  // per canvas
 const MAX_RENDERED = 7;
 const DRAG_START_PX = 10;       // one page at a time: a touch that moves this far is a swipe, not a tap
 const VELOCITY_MS = 100;        // a let-go's speed is measured over this last stretch of the drag
+const FLIP_REST_MS = 450;       // a page let go mid-turn takes up to this long to finish (or fall back)
 export const ZOOMS = [0.5, 0.6, 0.7, 0.8, 0.9, 1];
 
 function freeCanvas(c) {
@@ -30,6 +33,7 @@ function freeCanvas(c) {
 }
 
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
 export class Viewer extends EventTarget {
   constructor(root) {
@@ -38,6 +42,7 @@ export class Viewer extends EventTarget {
     this.scroller = root.querySelector('.scroller');
     this.pagesEl = root.querySelector('.pages');
     this.guide = root.querySelector('.guide');
+    this.flipLayer = root.querySelector('.flip');
     this.pages = [];
     this.docs = new Map();
     this.want = [];
@@ -49,7 +54,8 @@ export class Viewer extends EventTarget {
     this.layoutHeight = 0;
     this.paged = false; // one page at a time
     this.slot = 0; // px per page slot when paged
-    this.drag = null; // the music being moved by hand
+    this.drag = null; // two fingers moving the music (js/ink.js)
+    this.queued = 0; // page turns waiting for the page turning now
     this.wheel = { acc: 0, locked: false, timer: 0 };
     this.busy = false;
     this.currentIndex = -1;
@@ -155,14 +161,17 @@ export class Viewer extends EventTarget {
     if (!this.pages.length) return false;
     const s = getSettings();
     if (this.paged) {
-      this.drag = null;
-      const from = this.anim ? this.anim.to : this.scroller.scrollTop;
-      const next = pageAt(from, this.slot, this.pages.length) + dir;
-      if (next < 0 || next >= this.pages.length) {
+      // Turns that come while a page is turning wait for it, so two quick
+      // winks turn two pages one after the other.
+      const a = this.anim;
+      const waits = !!(a && a.flip && !a.held);
+      const at = waits ? pageAt(a.to, this.slot, this.pages.length) + this.queued : pageAt(this.scroller.scrollTop, this.slot, this.pages.length);
+      if (at + dir < 0 || at + dir >= this.pages.length) {
         this.dispatchEvent(new CustomEvent('edge', { detail: { dir } }));
         return false;
       }
-      this.#animateTo(next * this.slot, s.scrollDuration);
+      if (waits) this.queued += dir;
+      else this.#flipTurn(dir, s.scrollDuration);
       return true;
     }
     const vh = this.scroller.clientHeight;
@@ -185,20 +194,25 @@ export class Viewer extends EventTarget {
     this.scroller.scrollTop = this.paged ? p.slot : Math.max(0, p.top - PAD);
   }
 
+  // Stops a running page turn where it is (a page turning like a book's
+  // lands on its page).
   cancelAnimation() {
-    if (!this.anim) return;
-    cancelAnimationFrame(this.anim.raf);
-    this.anim = null;
-    this.#afterAnimation();
+    this.#stopAnimation(false);
   }
 
   // Jumps to where a running page turn was going.
   finishAnimation() {
-    if (!this.anim) return;
-    const to = this.anim.to;
-    cancelAnimationFrame(this.anim.raf);
+    this.#stopAnimation(true);
+  }
+
+  #stopAnimation(finish) {
+    const a = this.anim;
+    this.queued = 0;
+    if (!a) return;
     this.anim = null;
-    this.scroller.scrollTop = to;
+    cancelAnimationFrame(a.raf);
+    if (a.flip) a.flip.remove();
+    if (finish || a.flip) this.scroller.scrollTop = a.to;
     this.#afterAnimation();
   }
 
@@ -221,6 +235,7 @@ export class Viewer extends EventTarget {
   }
 
   #animateTo(to, duration) {
+    if (this.anim && this.anim.flip) this.#stopAnimation(true);
     if (this.anim) cancelAnimationFrame(this.anim.raf);
     if (!duration) {
       this.anim = null;
@@ -246,55 +261,95 @@ export class Viewer extends EventTarget {
     anim.raf = requestAnimationFrame(step);
   }
 
+  // ---- Turning like a book (one page at a time) ----
+
+  // Turns a page over duration ms (0 jumps).
+  #flipTurn(dir, duration) {
+    if (!duration) {
+      this.finishAnimation();
+      const next = pageAt(this.scroller.scrollTop, this.slot, this.pages.length) + dir;
+      this.scroller.scrollTop = Math.max(0, Math.min(this.pages.length - 1, next)) * this.slot;
+      this.#afterAnimation();
+      return;
+    }
+    const a = this.#startFlip(dir);
+    if (a) a.flip.play(1, duration, ease, () => this.#endFlip(a));
+  }
+
+  // Lays the copies over the music and moves the music to the new page
+  // underneath. Null at the start or end of the music.
+  #startFlip(dir) {
+    this.finishAnimation();
+    const from = this.scroller.scrollTop;
+    const i = pageAt(from, this.slot, this.pages.length);
+    const j = i + dir;
+    if (j < 0 || j >= this.pages.length) return null;
+    const showing = this.pages[i];
+    const next = this.pages[j];
+    const flip = dir > 0
+      ? new Flip(this.flipLayer, dir, this.#copy(showing, from))
+      : new Flip(this.flipLayer, dir, this.#copy(next, next.slot), this.#copy(showing, from));
+    const a = { to: j * this.slot, from, flip, raf: 0, held: false, width: (dir > 0 ? showing : next).cssW };
+    this.anim = a;
+    this.dispatchEvent(new Event('animstart'));
+    this.scroller.scrollTop = a.to;
+    return a;
+  }
+
+  #endFlip(a) {
+    if (this.anim !== a) return;
+    this.anim = null;
+    a.flip.remove();
+    this.scroller.scrollTop = a.to; // a page let go falls back to where it was
+    const q = this.queued;
+    this.queued = 0;
+    this.#afterAnimation();
+    if (!q) return;
+    // The turns that waited, one after another.
+    const dir = Math.sign(q);
+    const duration = getSettings().scrollDuration;
+    if (!duration) {
+      for (let k = 0; k < Math.abs(q); k++) this.#flipTurn(dir, 0);
+      return;
+    }
+    this.#flipTurn(dir, duration);
+    if (this.anim) this.queued = q - dir;
+  }
+
+  // A copy of page p as it is now, where it shows when the music is
+  // scrolled to scrollTop.
+  #copy(p, scrollTop) {
+    const el = p.el.cloneNode(true);
+    el.removeAttribute('data-index');
+    const c = el.querySelector('canvas.pdf');
+    if (c && p.canvas) c.getContext('2d', { alpha: false }).drawImage(p.canvas, 0, 0);
+    return { el, box: { left: parseFloat(p.el.style.left) || 0, top: p.top - scrollTop, width: p.cssW, height: p.cssH } };
+  }
+
   // ---- Moving the music by hand ----
   //
-  // Used for a swipe one page at a time, and for the two-finger scroll while a
-  // finger writes (js/ink.js). Scrolling, the music just follows; one page at
-  // a time it can go as far as the next or previous page, and settles on a
-  // page when the fingers let go.
+  // The two-finger scroll while a finger writes (js/ink.js). Scrolling, the
+  // music follows the fingers; one page at a time, a swipe up or down turns
+  // a page when they let go.
 
   dragStart(y) {
-    this.cancelAnimation();
-    const top = this.scroller.scrollTop;
-    this.drag = { top0: top, lastY: y, base: pageAt(top, this.slot, this.pages.length), samples: [{ y, t: performance.now() }] };
+    if (!this.paged) this.cancelAnimation();
+    this.drag = { y0: y, lastY: y };
   }
 
   dragMove(y) {
     const d = this.drag;
     if (!d) return;
-    const dy = y - d.lastY;
+    if (!this.paged) this.scroller.scrollTop -= y - d.lastY;
     d.lastY = y;
-    const now = performance.now();
-    d.samples.push({ y, t: now });
-    while (d.samples.length > 2 && now - d.samples[0].t > VELOCITY_MS) d.samples.shift();
-    if (!this.paged) {
-      this.scroller.scrollTop -= dy;
-      return;
-    }
-    const lo = Math.max(0, (d.base - 1) * this.slot);
-    const hi = Math.min((this.pages.length - 1) * this.slot, (d.base + 1) * this.slot);
-    this.scroller.scrollTop = Math.max(lo, Math.min(hi, this.scroller.scrollTop - dy));
   }
 
   dragEnd() {
     const d = this.drag;
     if (!d) return;
     this.drag = null;
-    if (!this.paged) return;
-    const now = performance.now();
-    const recent = d.samples.filter((s) => now - s.t <= VELOCITY_MS);
-    let velocity = 0;
-    if (recent.length >= 2) {
-      const a = recent[0];
-      const b = recent[recent.length - 1];
-      if (b.t > a.t) velocity = -(b.y - a.y) / (b.t - a.t); // finger up = music forward
-    }
-    const target = settlePage({ base: d.base, count: this.pages.length, moved: this.scroller.scrollTop - d.top0, slot: this.slot, velocity });
-    const to = target * this.slot;
-    const dist = Math.abs(to - this.scroller.scrollTop);
-    // Already moving with the finger, so it glides the rest of the way (also
-    // when page turns jump).
-    this.#animateTo(to, dist < 1 ? 0 : Math.round(Math.min(320, 140 + (180 * dist) / this.slot)));
+    const dir = this.paged ? swipeTurn(d.lastY - d.y0) : 0;
+    if (dir) this.dispatchEvent(new CustomEvent('swipe', { detail: { dir } }));
   }
 
   // A mouse wheel or trackpad, one page at a time: one page per push, however
@@ -608,9 +663,9 @@ export class Viewer extends EventTarget {
 
   // ---- Taps and swipes ----
 
-  // Taps, and one page at a time also swipes: up and down the music follows
-  // the finger; sideways it turns like a book. (Scrolling, the browser
-  // scrolls.)
+  // Taps, and one page at a time also swipes: sideways the page turns under
+  // the finger like a book's; up and down, a swipe turns a page. (Scrolling,
+  // the browser scrolls.)
   #setupPointer() {
     const sc = this.scroller;
     let g = null; // the touch being followed
@@ -622,37 +677,48 @@ export class Viewer extends EventTarget {
         return;
       }
       // A touch that just stops a flick isn't a tap.
-      g = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), tap: performance.now() - this.lastUserScrollAt >= 120, axis: null };
+      const now = performance.now();
+      g = { id: e.pointerId, x: e.clientX, y: e.clientY, t: now, tap: now - this.lastUserScrollAt >= 120, axis: null, flip: null, samples: [{ x: e.clientX, t: now }] };
     });
     sc.addEventListener('pointermove', (e) => {
       if (!g || g.id !== e.pointerId || !this.paged) return;
       if (this.ink.busy || this.ink.penDown) {
-        if (g.axis === 'y') this.dragEnd();
+        if (g.flip) this.#letGo(g.flip, 0, true);
         g = null;
         return;
       }
+      const dx = e.clientX - g.x;
+      const dy = e.clientY - g.y;
+      const now = performance.now();
+      g.samples.push({ x: e.clientX, t: now });
+      while (g.samples.length > 2 && now - g.samples[0].t > VELOCITY_MS) g.samples.shift();
       if (!g.axis) {
-        const dx = e.clientX - g.x;
-        const dy = e.clientY - g.y;
         if (Math.hypot(dx, dy) < DRAG_START_PX) return;
         g.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
         g.tap = false;
         try { sc.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
-        if (g.axis === 'y') this.dragStart(e.clientY);
-        return;
+        if (g.axis === 'x') {
+          g.flip = this.#startFlip(dx < 0 ? 1 : -1);
+          if (g.flip) g.flip.held = true;
+        }
       }
-      if (g.axis === 'y') this.dragMove(e.clientY);
+      if (g.flip && this.anim === g.flip) g.flip.flip.set(flipProgress(g.flip.flip.dir, dx, g.flip.width));
     });
     sc.addEventListener('pointerup', (e) => {
       const t = g;
       g = null;
       if (!t || t.id !== e.pointerId) return;
-      if (t.axis === 'y') {
-        this.dragEnd();
+      if (t.flip) {
+        const now = performance.now();
+        const recent = t.samples.filter((s) => now - s.t <= VELOCITY_MS);
+        let vx = 0;
+        if (recent.length >= 2 && recent[recent.length - 1].t > recent[0].t) vx = (recent[recent.length - 1].x - recent[0].x) / (recent[recent.length - 1].t - recent[0].t);
+        this.#letGo(t.flip, t.flip.flip.dir > 0 ? -vx : vx, false);
         return;
       }
-      if (t.axis === 'x') {
-        const dir = this.paged ? sideSwipe(e.clientX - t.x) : 0;
+      if (t.axis) {
+        // Up or down, or sideways at the start or end of the music.
+        const dir = this.paged ? swipeTurn(t.axis === 'x' ? e.clientX - t.x : e.clientY - t.y) : 0;
         if (dir) this.dispatchEvent(new CustomEvent('swipe', { detail: { dir } }));
         return;
       }
@@ -661,9 +727,21 @@ export class Viewer extends EventTarget {
       this.dispatchEvent(new CustomEvent('tap', { detail: { fy: (e.clientY - r.top) / r.height } }));
     });
     sc.addEventListener('pointercancel', (e) => {
-      if (g && g.id === e.pointerId && g.axis === 'y') this.dragEnd();
+      if (g && g.id === e.pointerId && g.flip) this.#letGo(g.flip, 0, true);
       g = null;
     });
+  }
+
+  // A page turning under the finger is let go, moving at v px/ms the way it
+  // turns: it finishes turning, or falls back (always, if cancelled).
+  #letGo(a, v, cancelled) {
+    if (this.anim !== a) return;
+    a.held = false;
+    const p = a.flip.p;
+    const done = !cancelled && flipCompletes(p, v);
+    if (!done) a.to = a.from;
+    const ms = Math.round(Math.max(120, FLIP_REST_MS * (done ? 1 - p : p)));
+    a.flip.play(done ? 1 : 0, ms, easeOut, () => this.#endFlip(a));
   }
 
   // ---- Position ----
