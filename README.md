@@ -36,8 +36,8 @@ never recorded or sent anywhere. See [privacy.html](privacy.html).
     right eyes the right way round and fixes it if not.
 - Remembers your place and zoom in every score, and reopens the score you were
   reading if iPadOS closes the app in the background.
-- Zoom (50 to 100% of the screen width), night mode (light notes on dark pages),
-  and keep-screen-awake.
+- Zoom (50 to 100% of the screen width, while scrolling), night mode (light
+  notes on dark pages), and keep-screen-awake.
 - **Backup**: Settings › Backup › Export creates one `.zip` with all PDFs and
   data (save it to Files or iCloud Drive). The zip is a normal archive; you can
   open it on a computer to get your PDFs back. Importing offers two choices:
@@ -47,6 +47,24 @@ never recorded or sent anywhere. See [privacy.html](privacy.html).
     settings are left alone.
   - **Replace** makes this device match the backup, settings included, except
     for this device's eye calibration (which depends on its camera).
+
+## One page at a time or scrolling
+
+Settings › Page turning › **Pages** chooses how the music is shown. The
+button next to the pen in a score's top bar switches between the two (its
+icon shows which one is on), and the score stays on the page you're reading.
+
+- **Scroll** (the default) is the continuous strip described above: each turn
+  moves part of the screen (Scroll amount), and you can scroll freely.
+- **One at a time** shows each page whole, as large as fits the screen, and
+  every turn (wink, tap, pedal or key) goes exactly one page. Swipe up or left
+  for the next page, down or right for the one before. The page follows your
+  finger and settles on a page when you let go, never more than one page per
+  swipe. A mouse wheel or trackpad also goes one page per push. Turn animation
+  0 makes the pages switch instantly.
+- In landscape, one at a time shows the page full height with the stage on
+  either side. Zoom is for scrolling, so its buttons hide in this mode.
+- With *Write with a finger* on, two fingers turn the pages one at a time too.
 
 ## Markings, favorites and folders (Phase 2)
 
@@ -208,7 +226,8 @@ If you replace anything in `vendor/`, also bump `LIB_CACHE` in `sw.js`.
 ```
 index.html, css/app.css      UI
 js/app.js                    startup, routing, wink → page turn, keys, wake lock
-js/viewer.js                 continuous PDF viewer (lazy rendering, animated turns)
+js/viewer.js                 PDF viewer: scrolling or one page at a time (lazy rendering, animated turns, swipes)
+js/paging.js                 one page at a time: page fitting and where a swipe lands (unit tested)
 js/library.js                library screen, favorites and folders bar
 js/lists.js                  favorites and folders (data)
 js/ink.js, js/ink-draw.js    writing on the music: Pencil input, SVG layers, eraser

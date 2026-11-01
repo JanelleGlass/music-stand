@@ -31,7 +31,7 @@ export class Ink extends EventTarget {
     this.fingerDraws = false;
     this.hidden = false;
     this.active = null; // the stroke being drawn
-    this.twoFinger = null; // { y } while two fingers scroll
+    this.twoFinger = false; // two fingers are scrolling (through viewer.drag*)
     this.raf = 0;
     this.settleUntil = 0;
     this.hiddenHintAt = 0;
@@ -89,6 +89,11 @@ export class Ink extends EventTarget {
 
   get drawing() {
     return !!this.active && this.active.started;
+  }
+
+  // The Pencil is on the glass where it would write.
+  get penDown() {
+    return !!this.active && this.active.pointerType === 'pen';
   }
 
   // Finger taps write instead of turning pages.
@@ -232,20 +237,23 @@ export class Ink extends EventTarget {
       if (fingers.length >= 2) {
         // A second finger: this is a scroll, so the first finger's mark goes.
         if (this.active && this.active.pointerType === 'touch') this.#endStroke(false);
-        this.twoFinger = { y: avgY(fingers) };
+        this.twoFinger = true;
+        this.viewer.dragStart(avgY(fingers));
       }
     }, { passive: false });
 
     sc.addEventListener('touchmove', (e) => {
       const fingers = [...e.touches].filter((t) => t.touchType !== 'stylus');
       if (!this.twoFinger || fingers.length < 2) return;
-      const y = avgY(fingers);
-      sc.scrollTop -= y - this.twoFinger.y;
-      this.twoFinger.y = y;
+      this.viewer.dragMove(avgY(fingers));
     }, { passive: true });
 
+    // One page at a time, the music then settles on a page.
     const endTouches = (e) => {
-      if (this.twoFinger && [...e.touches].filter((t) => t.touchType !== 'stylus').length < 2) this.twoFinger = null;
+      if (this.twoFinger && [...e.touches].filter((t) => t.touchType !== 'stylus').length < 2) {
+        this.twoFinger = false;
+        this.viewer.dragEnd();
+      }
     };
     sc.addEventListener('touchend', endTouches);
     sc.addEventListener('touchcancel', endTouches);

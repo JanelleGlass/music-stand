@@ -50,6 +50,22 @@ export function initSettings({ camera, onOpenChange, aroundImport = (fn) => fn()
   fps.addEventListener('change', () => updateSettings({ winkFps: +fps.value }));
   syncers.push(() => { fps.value = String(getSettings().winkFps); });
 
+  // One page at a time or scrolling; the scroll-only settings hide with it.
+  const mode = $('#s-mode');
+  mode.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-v]');
+    if (b) updateSettings({ turnMode: b.dataset.v });
+    sync();
+  });
+  syncers.push(() => {
+    const paged = getSettings().turnMode === 'page';
+    for (const b of mode.querySelectorAll('button')) b.setAttribute('aria-checked', String((b.dataset.v === 'page') === paged));
+    $('#s-mode-note').textContent = paged
+      ? 'Each turn shows the next whole page, sized to fit the screen. Swipe up or left for the next page.'
+      : 'The music is one long strip. Each turn moves part of the screen, and you can scroll freely.';
+    for (const el of dlg.querySelectorAll('.scroll-only')) el.hidden = paged;
+  });
+
   const seg = $('#s-fwd-eye');
   seg.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-v]');

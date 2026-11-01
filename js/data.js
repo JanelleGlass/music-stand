@@ -5,6 +5,7 @@ import { syncAccount } from './gdrive-auth.js';
 
 export const DEFAULT_SETTINGS = {
   // Page turning
+  turnMode: 'scroll',      // 'scroll' (one long strip) | 'page' (one page at a time)
   scrollAmount: 80,        // % of screen height per turn
   scrollDuration: 400,     // ms; 0 = jump
   readingGuide: true,      // flash a line where the old screen edge was

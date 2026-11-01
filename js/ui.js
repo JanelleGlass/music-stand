@@ -26,6 +26,8 @@ const ICONS = {
   trash: '<path d="M4 7h16"/><path d="M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/><path d="M6 7l1 12.2A2 2 0 0 0 9 21h6a2 2 0 0 0 2-1.8L18 7"/>',
   folder: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v6.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  'one-page': '<rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M8.5 7.5h7M8.5 11.5h7M8.5 15.5h4.5"/>',
+  scroll: '<rect x="3.5" y="3" width="11" height="18" rx="1.8"/><path d="M19.5 5.5v13M17.3 7.7l2.2-2.2 2.2 2.2M17.3 16.3l2.2 2.2 2.2-2.2"/>',
 };
 
 export function icon(name, cls = '') {

@@ -141,6 +141,17 @@ function updateZoomLabel() {
   $('#v-zoom').textContent = `${Math.round(viewer.zoom * 100)}%`;
 }
 
+// One page at a time or scrolling: the viewer, and the top-bar button that
+// shows which (its icon) and switches.
+function applyTurnMode() {
+  const paged = getSettings().turnMode === 'page';
+  viewer.setPaged(paged);
+  const b = $('#v-mode');
+  b.innerHTML = icon(paged ? 'one-page' : 'scroll');
+  b.setAttribute('aria-pressed', String(paged));
+  b.title = paged ? 'One page at a time' : 'Scrolling';
+}
+
 function turn(dir, source) {
   if (!viewerActive) return;
   // Not while the Pencil is writing: the mark would streak across the page.
@@ -173,6 +184,12 @@ function setupViewerControls() {
     const on = $('#v-star').getAttribute('aria-pressed') !== 'true';
     await setMember(FAVORITES, viewer.key, on);
     toast(on ? 'Added to Favorites.' : 'Removed from Favorites.', 1400);
+    showBar();
+  });
+  $('#v-mode').addEventListener('click', () => {
+    const paged = getSettings().turnMode !== 'page';
+    updateSettings({ turnMode: paged ? 'page' : 'scroll' });
+    toast(paged ? 'One page at a time' : 'Scrolling', 1400);
     showBar();
   });
   $('#v-zoom-in').addEventListener('click', () => { viewer.zoomStep(1); showBar(); });
@@ -209,6 +226,8 @@ function setupViewerControls() {
     else if (getSettings().tapToTurn && fy > 2 / 3) turn(1, 'tap');
     else toggleBar();
   });
+  // One page at a time: sideways swipes, and the mouse wheel or trackpad.
+  viewer.addEventListener('swipe', (e) => turn(e.detail.dir, 'swipe'));
   // Face tracking shares the main thread; pause it while a turn animates and
   // while the Pencil writes.
   let settle = 0;
@@ -396,9 +415,11 @@ async function main() {
   onSettings((s, patch) => {
     if ('nightMode' in patch) applyDisplay();
     if ('keepAwake' in patch) (s.keepAwake ? requestWakeLock() : releaseWakeLock());
+    if ('turnMode' in patch) applyTurnMode();
   });
 
   viewer = new Viewer($('#viewer'));
+  applyTurnMode();
   notesUi = initNotesUi({ ink: viewer.ink, onOpenChange: (open) => (open ? showBar(false) : showBar()) });
   setupWink();
   setupViewerControls();

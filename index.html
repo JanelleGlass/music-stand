@@ -77,6 +77,7 @@
       <button id="v-star" class="icon-btn star-btn" aria-label="Add to Favorites" aria-pressed="false"><span data-icon="star"></span></button>
       <button id="v-notes" class="icon-btn notes-btn" aria-label="Markings" aria-pressed="false"><span data-icon="pen"></span></button>
       <div id="notes-tools" class="notes-tools" role="toolbar" aria-label="Markings" hidden></div>
+      <button id="v-mode" class="icon-btn" aria-label="One page at a time" aria-pressed="false"></button>
       <div class="zoom" role="group" aria-label="Zoom">
         <button id="v-zoom-out" class="icon-btn" aria-label="Zoom out"><span data-icon="minus"></span></button>
         <span id="v-zoom" class="zoom-val">100%</span>
@@ -111,16 +112,26 @@
 
       <section class="group">
         <h3>Page turning</h3>
-        <div class="slider">
+        <div class="pick">
+          <div class="row">
+            <span id="s-mode-label">Pages</span>
+            <div class="seg" id="s-mode" role="radiogroup" aria-labelledby="s-mode-label">
+              <button type="button" data-v="page" role="radio">One at a time</button>
+              <button type="button" data-v="scroll" role="radio">Scroll</button>
+            </div>
+          </div>
+          <small id="s-mode-note"></small>
+        </div>
+        <div class="slider scroll-only">
           <div class="row"><label for="s-amount">Scroll amount</label><output id="s-amount-out"></output></div>
           <input type="range" id="s-amount" min="30" max="100" step="5">
           <small>How much of the screen each turn moves.</small>
         </div>
         <div class="slider">
-          <div class="row"><label for="s-duration">Scroll animation</label><output id="s-duration-out"></output></div>
+          <div class="row"><label for="s-duration">Turn animation</label><output id="s-duration-out"></output></div>
           <input type="range" id="s-duration" min="0" max="1000" step="50">
         </div>
-        <label class="toggle"><span>Reading guide<small>Briefly marks where the old edge of the screen moved to.</small></span><input type="checkbox" id="s-guide"></label>
+        <label class="toggle scroll-only"><span>Reading guide<small>Briefly marks where the old edge of the screen moved to.</small></span><input type="checkbox" id="s-guide"></label>
         <label class="toggle"><span>Tap to turn<small>Tap the bottom third to go forward, the top third to go back, the middle for the toolbar.</small></span><input type="checkbox" id="s-tap"></label>
         <p class="hint">Bluetooth page-turner pedals and arrow / Page Up / Page Down keys also work.</p>
       </section>
