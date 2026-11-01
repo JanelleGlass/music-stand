@@ -77,6 +77,15 @@ export async function getAllKeys(store) {
   return wrap(db.transaction(store).objectStore(store).getAllKeys());
 }
 
+// [key, value] pairs of every entry whose key is a string starting with prefix.
+export async function getAllWithPrefix(store, prefix) {
+  const db = await openDb();
+  const s = db.transaction(store).objectStore(store);
+  const range = IDBKeyRange.bound(prefix, prefix + '￿');
+  const [keys, values] = await Promise.all([wrap(s.getAllKeys(range)), wrap(s.getAll(range))]);
+  return keys.map((k, i) => [k, values[i]]);
+}
+
 export async function getAllByIndex(store, index, value) {
   const db = await openDb();
   return wrap(db.transaction(store).objectStore(store).index(index).getAll(value));
@@ -102,6 +111,26 @@ export async function clear(store) {
   const tx = db.transaction(store, 'readwrite');
   tx.objectStore(store).clear();
   return done(tx);
+}
+
+// Reads one entry and writes back what fn returns, in one transaction, so
+// nothing can change it in between. fn returning undefined writes nothing.
+// Resolves to whether it wrote.
+export async function update(store, key, fn) {
+  const db = await openDb();
+  const tx = db.transaction(store, 'readwrite');
+  const s = tx.objectStore(store);
+  let wrote = false;
+  const req = s.get(key);
+  req.onsuccess = () => {
+    const next = fn(req.result);
+    if (next === undefined) return;
+    wrote = true;
+    if (s.keyPath === null) s.put(next, key);
+    else s.put(next);
+  };
+  await done(tx);
+  return wrote;
 }
 
 // Run several operations atomically. fn receives { storeName: IDBObjectStore }.

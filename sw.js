@@ -1,6 +1,6 @@
 // Offline support. Bump VERSION whenever you change any app file, so iPads
 // pick up the new version (the app then shows an "Update now" banner).
-const VERSION = '1.0.2';
+const VERSION = '1.1.0';
 const CORE_CACHE = `ms-core-${VERSION}`;
 // Third-party libraries change only when their files are replaced; bump LIB
 // then. Kept separate so app updates don't re-download ~15 MB of models.
@@ -15,13 +15,18 @@ const CORE = [
   'js/backup.js',
   'js/data.js',
   'js/db.js',
-  'js/drive-test.js',
   'js/gdrive-auth.js',
   'js/gdrive.js',
   'js/library.js',
   'js/merge.js',
   'js/pdfdoc.js',
   'js/settings-ui.js',
+  'js/sync.js',
+  'js/sync-engine.js',
+  'js/sync-local.js',
+  'js/sync-plan.js',
+  'js/sync-remote.js',
+  'js/sync-ui.js',
   'js/ui.js',
   'js/viewer.js',
   'js/wink-camera.js',
@@ -87,7 +92,9 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  if (req.mode === 'navigate') {
+  // Other pages (privacy.html) are their own documents, not the app.
+  const appPage = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+  if (req.mode === 'navigate' && appPage) {
     event.respondWith((async () => {
       const cached = await caches.match('index.html', { ignoreSearch: true });
       return cached || fetch(req);

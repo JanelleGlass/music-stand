@@ -3,9 +3,11 @@
 A personal sheet music reader for iPad. It runs in Safari, installs to the
 Home Screen, and works offline. Turn pages by winking at the front camera.
 
-Everything stays on the iPad: PDFs, settings and reading positions are stored
-in the browser's local database, and camera frames are analysed on the device
-and never recorded or sent anywhere.
+PDFs, settings and reading positions are stored in the browser's local
+database on the iPad, so the music works offline. If you connect Google Drive,
+your scores are also kept in a "Music Stand" folder in your own Drive and stay
+the same on all your devices. Camera frames are analysed on the device and
+never recorded or sent anywhere. See [privacy.html](privacy.html).
 
 ## Features (Phase 1)
 
@@ -46,13 +48,38 @@ and never recorded or sent anywhere.
   - **Replace** makes this device match the backup, settings included, except
     for this device's eye calibration (which depends on its camera).
 
-### Using more than one device
+### Using more than one device: Google Drive sync
 
-Each device keeps its own library; nothing is stored on the website. To copy
-your library to another iPad (or a computer), export a backup, save it to
-iCloud Drive, then on the other device open Music Stand and import it with
-**Merge**. Repeat whenever you've added music on one device that you want on
-the other.
+Settings › Google Drive › **Connect Google Drive** signs in with Google and
+keeps the library the same on every device connected to the same Google
+account:
+
+- Scores are stored as ordinary PDFs in a **Music Stand** folder in your
+  Drive, named like the score. That folder is also a backup you can open on a
+  computer.
+- Adding, renaming and deleting scores travels to the other devices. Deleted
+  scores go to the Google Drive trash, where Drive keeps them for 30 days.
+- The same PDF added on two devices becomes one score. A new version of a PDF
+  uploaded in Drive on the web (Manage versions) reaches every device.
+- Sync runs when the app opens, when you come back to it, a moment after you
+  change something, and when you tap the cloud button or **Sync now**. It never
+  runs while a score is open, and big transfers carry on where they stopped.
+- Google gives the app an hour of access at a time. When the app opens it
+  fetches a new hour by going to Google and straight back (a brief flash).
+  Otherwise the cloud button asks for a tap, which opens Google's sign-in
+  window for a moment.
+- If many scores disappear from Drive at once (for example the Music Stand
+  folder went to the trash), nothing is deleted on the iPad until you choose,
+  from the **Review** strip, to keep them or delete them.
+- Reading positions and settings stay per device.
+- The app can only see files it made itself, so add music with **Add PDF**:
+  PDFs dropped into the folder from a computer don't show up.
+- **Copy sync report** in Settings copies a log that helps when something
+  doesn't sync.
+
+Without Google Drive, copy your library to another device with a backup:
+export it, save it to iCloud Drive, then import it on the other device with
+**Merge**.
 
 ## Put it on GitHub Pages
 
@@ -101,6 +128,24 @@ Export a backup now and then anyway.
 Camera rate: *Battery saver* (12 per second) is enough for most people and
 helps on long services; *Responsive* (30 per second) reacts slightly faster.
 
+## Google Cloud setup (for Drive sync)
+
+The Client ID in `js/gdrive-auth.js` belongs to a Google Cloud project
+(Google Auth Platform):
+
+- **Clients**: a Web application client whose authorized JavaScript origins
+  and redirect URIs include `https://janelleglass.github.io` and
+  `https://janelleglass.github.io/music-stand/` (plus `http://localhost:8787`
+  for local testing). Only the Client ID is used; there is no client secret.
+- **Data access**: the only scope is `.../auth/drive.file` (files the app
+  creates), which Google treats as non-sensitive.
+- **Branding**: home page `https://janelleglass.github.io/music-stand/`,
+  privacy policy `https://janelleglass.github.io/music-stand/privacy.html`.
+- **Audience**: while the app is in *Testing*, Google ends each sign-in's
+  approval after 7 days and only listed test users can sign in. Publish the app
+  (*In production*) so sign-in renews on its own; with only `drive.file` this
+  needs no Google review.
+
 ## Updating the app
 
 When you change any app file, bump `VERSION` at the top of `sw.js` (for example
@@ -132,9 +177,15 @@ js/wink-camera.js            camera + MediaPipe → wink events
 js/data.js, js/db.js         IndexedDB storage
 js/backup.js, js/zip.js      backup export/import
 js/merge.js                  rules for merging a backup into the library (unit tested)
+js/gdrive-auth.js            Google sign-in (pop-up and redirect), no server
+js/gdrive.js                 Google Drive REST calls
+js/sync-plan.js              Drive sync rules (no DOM or network, unit tested)
+js/sync-engine.js            carries out one sync through two adapters (unit tested with fakes)
+js/sync-local.js, sync-remote.js  the adapters: IndexedDB library, Google Drive
+js/sync.js, js/sync-ui.js    when sync runs, its sign-in, Settings section and cloud button
 sw.js, manifest.webmanifest  offline + Home Screen install
 vendor/                      PDF.js 4.10.38 (legacy build), MediaPipe tasks-vision 0.10.21, face model
-tests/                       node --test tests/wink-logic.test.mjs tests/merge.test.mjs
+tests/                       node --test tests/*.test.mjs (fake Drive and devices for sync)
 ```
 
 The storage already has places for Phase 2 (annotations per page) and Phase 3

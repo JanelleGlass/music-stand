@@ -364,19 +364,21 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-/* ---------- Google Drive test & sign-in notes ---------- */
-.drive-log {
-  margin: 4px 0 8px;
-  padding: 10px 12px;
-  max-height: 280px;
-  overflow: auto;
-  background: var(--surface-2);
-  border-radius: 10px;
-  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
-  -webkit-user-select: text;
-  user-select: text;
+/* ---------- Google Drive sync & sign-in notes ---------- */
+.sync-btn { position: relative; }
+.sync-btn .dot { position: absolute; right: 7px; top: 9px; width: 9px; height: 9px; border-radius: 50%; background: transparent; }
+.sync-btn.s-syncing .dot { background: #e6b54a; animation: pulse 1s infinite; }
+.sync-btn.s-signin .dot,
+.sync-btn.s-decision .dot { background: #e6b54a; }
+.sync-btn.s-tap.pending .dot { background: #9aa0aa; }
+.sync-btn.s-paused .dot,
+.sync-btn.s-offline .dot { background: #9aa0aa; }
+.sync-btn.s-offline { opacity: 0.55; }
+.sync-btn.s-error .dot { background: #ff5a4a; }
+
+.boot-note {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 15px;
 }
 
 .signin-note {

@@ -57,6 +57,13 @@ export function setAccount(account) {
   write(ACCOUNT_KEY, account);
 }
 
+// The account Google Drive sync is connected to, or null. (An account kept
+// by the earlier Drive test panel, without sync: true, doesn't count.)
+export function syncAccount() {
+  const account = getAccount();
+  return account && account.sync ? account : null;
+}
+
 function grantedDrive(scope) {
   return String(scope || '').split(/\s+/).includes(SCOPE);
 }
@@ -72,21 +79,11 @@ export function dropToken() {
   write(TOKEN_KEY, null);
 }
 
-// Forgets the account here and asks Google to withdraw the app's access to
-// Drive. That needs a token that hasn't expired; returns whether there was
-// one. Google's answer can't be read, so success isn't known.
-export function signOut() {
-  const t = currentToken(0);
+// Forgets the sign-in and the account on this device only. (Withdrawing the
+// app's access at Google would cut off the person's other devices too.)
+export function forget() {
   write(TOKEN_KEY, null);
   write(ACCOUNT_KEY, null);
-  if (!t) return false;
-  fetch('https://oauth2.googleapis.com/revoke', {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `token=${encodeURIComponent(t.accessToken)}`,
-  }).catch(() => {});
-  return true;
 }
 
 // ---- Redirect ----
@@ -149,8 +146,30 @@ export function takeRedirectResult() {
   // The pending entry stays until it expires: the hand-back from Google's
   // sheet can load this page twice, and both loads must succeed.
   out.inSheet = state.endsWith('.app') && !isStandalone();
+  // answered: the sign-in came back. taken: this copy of the app acts on it
+  // (the sheet's copy leaves that to the app underneath).
+  if (fresh && state === pending.state) write(PENDING_KEY, { ...pending, answered: true, taken: !out.inSheet });
   history.replaceState(null, '', location.pathname + location.search + ((fresh && pending.returnHash) || ''));
   return out;
+}
+
+// A sign-in whose answer came back in another copy of the app (Google's
+// sheet over the Home Screen app): returns its purpose once, or null.
+export function takeAnsweredSignIn() {
+  const pending = read(PENDING_KEY);
+  if (!pending || !pending.answered || pending.taken || Date.now() - pending.at > PENDING_TTL) return null;
+  write(PENDING_KEY, { ...pending, taken: true });
+  return pending.purpose;
+}
+
+// A sign-in that left for Google and never came back (no network, a wifi
+// login page, the app was closed): returns its purpose once, or null.
+// Call at startup after takeRedirectResult().
+export function takeAbandonedSignIn() {
+  const pending = read(PENDING_KEY);
+  if (!pending || pending.answered || Date.now() - pending.at < 15_000) return null;
+  write(PENDING_KEY, null);
+  return pending.purpose;
 }
 
 // ---- Pop-up ----

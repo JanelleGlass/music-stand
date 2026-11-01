@@ -14,6 +14,7 @@ const ICONS = {
   up: '<path d="M6 15l6-6 6 6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+  cloud: '<path d="M17.5 19a4.5 4.5 0 0 0 .4-8.98A6.5 6.5 0 0 0 5.4 11.6 3.8 3.8 0 0 0 6.5 19z"/>',
 };
 
 export function icon(name, cls = '') {
@@ -36,6 +37,23 @@ export function formatBytes(n) {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+// ---- Work under way ----
+
+// Counts things the person started that a page reload would cut short
+// (adding PDFs, a backup), so sign-in doesn't reload the page meanwhile.
+let busyCount = 0;
+export async function whileBusy(fn) {
+  busyCount++;
+  try {
+    return await fn();
+  } finally {
+    busyCount--;
+  }
+}
+export function isBusy() {
+  return busyCount > 0;
+}
+
 // ---- Toast ----
 
 let toastTimer = 0;
@@ -52,16 +70,22 @@ export function hideToast() {
 
 // ---- Modal dialogs ----
 
+let closeActive = null;
+
 function openModal(build) {
   const dlg = $('#modal');
+  // One dialog at a time: one still open counts as cancelled.
+  if (closeActive) closeActive(null);
   return new Promise((resolve) => {
     let settled = false;
     const finish = (v) => {
       if (settled) return;
       settled = true;
+      if (closeActive === finish) closeActive = null;
       dlg.close();
       resolve(v);
     };
+    closeActive = finish;
     dlg.innerHTML = '';
     build(dlg, finish);
     // A close event from the previous modal can arrive after this one opened;

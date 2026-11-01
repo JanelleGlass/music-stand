@@ -115,6 +115,10 @@ export async function importBackup({ zip, manifest }, { replace }, onProgress = 
   if (replace) {
     // Settings (kv) are swapped in at the end instead, so a failed import keeps them.
     for (const s of db.ALL_STORES) if (s !== 'kv') await db.clear(s);
+    // Google Drive sync starts afresh with these scores: each is matched to
+    // Drive again, so the restore wins and Drive's names are used.
+    const synced = (await db.getAllWithPrefix('kv', 'sync:')).map(([k]) => k).filter((k) => /^sync:(link|upload):/.test(k));
+    if (synced.length) await db.transact(['kv'], (st) => { for (const k of synced) st.kv.delete(k); });
   }
 
   const remap = new Map(); // backup file id → id of the same score here

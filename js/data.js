@@ -1,6 +1,7 @@
 // App-level data API: settings, the PDF library, reading positions.
 import * as db from './db.js';
 import { openPdf, readPageSizes, renderThumb } from './pdfdoc.js';
+import { syncAccount } from './gdrive-auth.js';
 
 export const DEFAULT_SETTINGS = {
   // Page turning
@@ -66,6 +67,18 @@ export function notifyLibraryChange() {
   for (const fn of libraryListeners) fn();
 }
 
+// Changes the person made here (add, rename, delete), as opposed to ones
+// Google Drive sync brought in. Sync listens so it can send them on.
+const editListeners = new Set();
+export function onLibraryEdit(fn) {
+  editListeners.add(fn);
+  return () => editListeners.delete(fn);
+}
+function edited() {
+  notifyLibraryChange();
+  for (const fn of editListeners) fn();
+}
+
 export function newId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
@@ -97,6 +110,51 @@ function cleanName(filename) {
   return filename.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').trim() || 'Untitled';
 }
 
+// Reads a PDF's pages and stores it with its thumbnail. Reading a big PDF
+// takes seconds, so the store happens in one transaction that looks at the
+// library as it is by then. fields: id, name, hash, addedAt. Options:
+//   blob     the same bytes as buf in a Blob that is safe to keep, if any
+//   replace  new content for the score fields.id, keeping its name and
+//            reading details; nothing is stored if it was deleted meanwhile
+// Resolves to { meta, existing }. meta is null when nothing was stored;
+// existing is then the id of a score that already has this PDF, if any.
+export async function storePdf(buf, fields, { onProgress, blob = null, replace = false } = {}) {
+  // Copy into a fresh Blob: iOS can discard the temp file behind a picked File.
+  // (The Blob constructor copies the bytes, so PDF.js may take ownership of buf.)
+  if (!blob) blob = new Blob([buf], { type: 'application/pdf' });
+  const pdf = await openPdf(buf);
+  try {
+    const pageSizes = await readPageSizes(pdf, onProgress);
+    const thumb = await renderThumb(pdf).catch(() => null);
+    const read = { size: blob.size, pageCount: pdf.numPages, pageSizes };
+    const out = { meta: null, existing: null };
+    await db.transact(['files', 'blobs', 'thumbs'], (s) => {
+      const req = s.files.getAll();
+      req.onsuccess = () => {
+        const current = req.result.find((f) => f.id === fields.id);
+        if (replace) {
+          if (!current) return;
+          out.meta = { ...current, hash: fields.hash, ...read };
+        } else {
+          const same = req.result.find((f) => f.id === fields.id || (fields.hash && f.hash === fields.hash));
+          if (same) {
+            out.existing = same.hash === fields.hash ? same.id : null;
+            return;
+          }
+          out.meta = { openedAt: 0, ...fields, ...read };
+        }
+        s.files.put(out.meta);
+        s.blobs.put(blob, out.meta.id);
+        if (thumb) s.thumbs.put(thumb, out.meta.id);
+        else s.thumbs.delete(out.meta.id);
+      };
+    });
+    return out;
+  } finally {
+    pdf.destroy();
+  }
+}
+
 // Adds a PDF File/Blob to the library. Returns { status: 'added'|'duplicate', meta }.
 export async function addPdf(file, onProgress) {
   const buf = await file.arrayBuffer();
@@ -105,41 +163,19 @@ export async function addPdf(file, onProgress) {
     const existing = (await listFiles()).find((f) => f.hash === hash);
     if (existing) return { status: 'duplicate', meta: existing };
   }
-  // Copy into a fresh Blob: iOS can discard the temp file behind a picked File.
-  // (The Blob constructor copies the bytes, so PDF.js may take ownership of buf.)
-  const blob = new Blob([buf], { type: 'application/pdf' });
-  const pdf = await openPdf(buf);
-  try {
-    const pageSizes = await readPageSizes(pdf, onProgress);
-    const thumb = await renderThumb(pdf).catch(() => null);
-    const meta = {
-      id: newId(),
-      name: cleanName(file.name || 'Untitled'),
-      size: blob.size,
-      pageCount: pdf.numPages,
-      pageSizes,
-      hash,
-      addedAt: Date.now(),
-      openedAt: 0,
-    };
-    await db.transact(['files', 'blobs', 'thumbs'], (s) => {
-      s.files.put(meta);
-      s.blobs.put(blob, meta.id);
-      if (thumb) s.thumbs.put(thumb, meta.id);
-    });
-    notifyLibraryChange();
-    return { status: 'added', meta };
-  } finally {
-    pdf.destroy();
-  }
+  const { meta, existing } = await storePdf(buf, { id: newId(), name: cleanName(file.name || 'Untitled'), hash, addedAt: Date.now() }, { onProgress });
+  // The same PDF arrived meanwhile (Google Drive sync).
+  if (!meta) return { status: 'duplicate', meta: await getFile(existing) };
+  edited();
+  return { status: 'added', meta };
 }
 
 export async function renameFile(id, name) {
   const meta = await getFile(id);
-  if (!meta) return;
-  meta.name = name.trim() || meta.name;
+  if (!meta || !name.trim() || name.trim() === meta.name) return;
+  meta.name = name.trim();
   await db.put('files', meta);
-  notifyLibraryChange();
+  edited();
 }
 
 export async function touchFile(id) {
@@ -149,16 +185,26 @@ export async function touchFile(id) {
   await db.put('files', meta);
 }
 
+// Deletes a score the person chose to delete. With Google Drive sync on, the
+// note left behind tells sync to delete it everywhere.
 export async function deleteFile(id) {
+  const meta = await getFile(id);
+  await removeFile(id, syncAccount() ? { hash: (meta && meta.hash) || null, at: Date.now() } : null);
+  edited();
+}
+
+// Deletes a score's PDF, thumbnail, reading place and notes. tomb: the
+// sync note to leave, or null when sync itself is deleting it.
+export async function removeFile(id, tomb = null) {
   const notes = await db.getAllByIndex('annotations', 'fileId', id);
-  await db.transact(['files', 'blobs', 'thumbs', 'positions', 'annotations'], (s) => {
+  await db.transact(['files', 'blobs', 'thumbs', 'positions', 'annotations', 'kv'], (s) => {
     s.files.delete(id);
     s.blobs.delete(id);
     s.thumbs.delete(id);
     s.positions.delete(id);
     for (const n of notes) s.annotations.delete(n.id);
+    if (tomb) s.kv.put(tomb, `sync:tomb:${id}`);
   });
-  notifyLibraryChange();
 }
 
 // Rebuilds missing thumbnails (e.g. after restoring a backup).
@@ -170,8 +216,21 @@ export async function ensureThumb(meta) {
   const pdf = await openPdf(await blob.arrayBuffer());
   try {
     const thumb = await renderThumb(pdf);
-    if (thumb) await db.put('thumbs', thumb, meta.id);
-    return thumb;
+    if (!thumb) return null;
+    // Keep it only if the PDF wasn't replaced (a new version from Google
+    // Drive) and no thumbnail was stored meanwhile.
+    let kept = thumb;
+    await db.transact(['files', 'thumbs'], (s) => {
+      // Requests finish in order, so file is done when stored is.
+      const file = s.files.get(meta.id);
+      const stored = s.thumbs.get(meta.id);
+      stored.onsuccess = () => {
+        if (stored.result) kept = stored.result;
+        else if (file.result && file.result.hash === meta.hash) s.thumbs.put(thumb, meta.id);
+        else kept = null;
+      };
+    });
+    return kept;
   } finally {
     pdf.destroy();
   }

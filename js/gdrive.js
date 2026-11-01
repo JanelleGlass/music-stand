@@ -2,7 +2,7 @@
 // from gdrive-auth.js; a DriveError with status 401 means it has expired.
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
-const FILE_FIELDS = 'id,name,size,md5Checksum,sha256Checksum,modifiedTime,trashed,appProperties';
+const FILE_FIELDS = 'id,name,mimeType,parents,size,md5Checksum,sha256Checksum,createdTime,modifiedTime,trashed,explicitlyTrashed,appProperties';
 
 export class DriveError extends Error {
   constructor(status, message, reason = '') {
@@ -25,10 +25,40 @@ async function failure(res) {
   return new DriveError(res.status, message, reason);
 }
 
+const RETRY_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded', 'backendError', 'internalError']);
+const RETRY_DELAYS = [1000, 2000, 4000, 8000];
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Drive asks apps to retry when it is busy, waiting longer each time.
+function retryable(e) {
+  return e.status === 429 || e.status >= 500 || (e.status === 403 && RETRY_REASONS.has(e.reason));
+}
+
 async function request(token, url, { method = 'GET', headers = {}, body } = {}) {
-  const res = await fetch(url, { method, headers: { Authorization: `Bearer ${token}`, ...headers }, body });
-  if (!res.ok) throw await failure(res);
-  return res;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { method, headers: { Authorization: `Bearer ${token}`, ...headers }, body });
+    if (res.ok) return res;
+    const e = await failure(res);
+    if (attempt >= RETRY_DELAYS.length || !retryable(e)) throw e;
+    await wait(RETRY_DELAYS[attempt] + Math.random() * 500);
+  }
+}
+
+// Whether Google's API answers at all: asked without a sign-in, a real
+// answer is a readable 401. No network, or a wifi login page in the way,
+// shows up as a failed request.
+export async function googleAnswers(timeoutMs = 4000) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${API}/about?fields=kind`, { cache: 'no-store', signal: ctrl.signal });
+    return res.status === 401 || res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 export async function getAbout(token) {
@@ -43,6 +73,49 @@ export async function getFile(token, id, fields = FILE_FIELDS) {
 
 export async function deleteFile(token, id) {
   await request(token, `${API}/files/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+// Every file matching q, across all pages of results.
+export async function listFiles(token, q, fields = FILE_FIELDS) {
+  // Keyed by id: a file changed while the pages are read can turn up twice.
+  const out = new Map();
+  let pageToken = '';
+  do {
+    const params = new URLSearchParams({ q, pageSize: '1000', spaces: 'drive', fields: `nextPageToken,files(${fields})` });
+    if (pageToken) params.set('pageToken', pageToken);
+    const body = await (await request(token, `${API}/files?${params}`)).json();
+    for (const f of body.files || []) out.set(f.id, f);
+    pageToken = body.nextPageToken || '';
+  } while (pageToken);
+  return [...out.values()];
+}
+
+// A file without content (a folder, say).
+export async function createFile(token, metadata, fields = FILE_FIELDS) {
+  const res = await request(token, `${API}/files?fields=${encodeURIComponent(fields)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify(metadata),
+  });
+  return res.json();
+}
+
+// Changes a file's name, trashed state or appProperties. params: more query
+// parameters (addParents and removeParents move it to another folder).
+export async function updateFile(token, id, metadata, fields = FILE_FIELDS, params = {}) {
+  const query = new URLSearchParams({ fields, ...params });
+  const res = await request(token, `${API}/files/${encodeURIComponent(id)}?${query}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify(metadata),
+  });
+  return res.json();
+}
+
+// A file's whole content.
+export async function download(token, id) {
+  const res = await request(token, `${API}/files/${encodeURIComponent(id)}?alt=media`);
+  return res.blob();
 }
 
 // Starts a resumable upload and returns its session address. Drive keeps the

@@ -3,7 +3,8 @@
 import { getSettings, updateSettings, storageEstimate, requestPersistence } from './data.js';
 import { exportBackup, inspectBackup, previewImport, importBackup, saveFile, backupFilename } from './backup.js';
 import { thresholds } from './wink-logic.js';
-import { $, toast, actionSheet, formatBytes } from './ui.js';
+import { syncAccount } from './gdrive-auth.js';
+import { $, toast, actionSheet, formatBytes, whileBusy } from './ui.js';
 
 export function initSettings({ camera, onOpenChange }) {
   const dlg = $('#settings');
@@ -183,9 +184,9 @@ export function initSettings({ camera, onOpenChange }) {
     bSave.hidden = true;
     prepared = null;
     try {
-      const blob = await exportBackup((i, n, name) => {
+      const blob = await whileBusy(() => exportBackup((i, n, name) => {
         bStatus.textContent = n ? `Preparing backup… ${i} of ${n}${name ? ` (${name})` : ''}` : 'Preparing backup…';
-      });
+      }));
       prepared = { blob, name: backupFilename() };
       bStatus.textContent = `Backup ready: ${formatBytes(blob.size)}. Tap “Save backup file”, then choose Save to Files.`;
       bSave.hidden = false;
@@ -219,7 +220,8 @@ export function initSettings({ camera, onOpenChange }) {
       const mode = await actionSheet({
         title: `Backup from ${when}`,
         message: `${describeBackup(await previewImport(backup))} ` +
-          'Merge adds what’s missing and keeps this device’s settings. Replace makes this device match the backup.',
+          'Merge adds what’s missing and keeps this device’s settings. Replace makes this device match the backup.' +
+          (syncAccount() ? ' (With Google Drive sync on, the scores in your Drive come back at the next sync.)' : ''),
         actions: [
           { label: 'Merge into my library', value: 'merge' },
           { label: 'Replace everything on this device', value: 'replace', danger: true },
@@ -227,9 +229,9 @@ export function initSettings({ camera, onOpenChange }) {
       });
       if (!mode) return;
       const replace = mode === 'replace';
-      const res = await importBackup(backup, { replace }, (i, total, name) => {
+      const res = await whileBusy(() => importBackup(backup, { replace }, (i, total, name) => {
         bStatus.textContent = total ? `Importing ${i} of ${total}${name ? ` (${name})` : ''}…` : 'Importing…';
-      });
+      }));
       sync();
       const already = res.here ? ` ${res.here} ${res.here === 1 ? 'was' : 'were'} already on this device.` : '';
       if (replace) bStatus.textContent = `Restored ${scores(res.added)}.`;

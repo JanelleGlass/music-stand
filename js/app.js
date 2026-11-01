@@ -5,8 +5,9 @@ import { WinkCamera } from './wink-camera.js';
 import { initSettings } from './settings-ui.js';
 import { describePdfError } from './pdfdoc.js';
 import { takeRedirectResult } from './gdrive-auth.js';
-import { initDriveTest } from './drive-test.js';
-import { $, icon, toast, promptDialog } from './ui.js';
+import { initSync } from './sync.js';
+import { initSyncUi, confirmAccountSwitch } from './sync-ui.js';
+import { $, icon, toast, promptDialog, isBusy } from './ui.js';
 
 const LAST_VIEW_KEY = 'ms:lastView';
 const RESUME_WITHIN_MS = 12 * 60 * 60 * 1000;
@@ -16,7 +17,7 @@ let viewer;
 let camera;
 let library;
 let settingsUi;
-let driveTest;
+let sync;
 let viewerActive = false;
 let settingsOpen = false;
 let barTimer = 0;
@@ -69,6 +70,7 @@ function showLibrary() {
   document.title = 'Music Stand';
   rememberView();
   library.refresh();
+  if (sync) sync.libraryShown();
 }
 
 async function showViewer(fileId) {
@@ -334,11 +336,20 @@ async function main() {
     camera,
     onOpenChange: (open) => {
       settingsOpen = open;
-      if (open) driveTest.prepare();
+      if (open) sync.prepare();
       if (viewerActive) (open ? showBar(false) : showBar());
     },
   });
-  driveTest = initDriveTest();
+  const inLibrary = () => !viewerActive && !location.hash.startsWith('#/file/');
+  sync = initSync({
+    canSync: inLibrary,
+    // Going to Google and back reloads the page: only with the library
+    // showing, no dialog (or Settings) open and nothing under way.
+    canReload: () => inLibrary() && !document.hidden && !document.querySelector('dialog[open]') && !isBusy(),
+    canLeave: () => inLibrary() && !isBusy(),
+    confirmSwitch: confirmAccountSwitch,
+  });
+  initSyncUi(sync);
   $('#lib-settings').addEventListener('click', () => settingsUi.open());
 
   // Restoring a backup can remove the score that's open.
@@ -357,36 +368,54 @@ async function main() {
     }
   });
   window.addEventListener('pagehide', () => viewer.flushPosition());
+
+  // The rest of starting up, once (it may wait for a trip to Google).
+  let booted = false;
+  async function finishBoot(result) {
+    if (booted) return;
+    booted = true;
+    $('#boot-note').hidden = true;
+    await route();
+    sync.started(result);
+    setupServiceWorker();
+    requestPersistence();
+  }
+
   window.addEventListener('hashchange', async () => {
     // Google's answer can also reach the running app as a jump within the
     // page, without a reload.
     const result = takeRedirectResult();
-    await route();
-    if (result) {
-      settingsUi.open();
-      driveTest.reportRedirect({ ...result, withoutReload: true });
+    if (!booted) {
+      await finishBoot(result);
+      return;
     }
+    await route();
+    if (result) sync.answered(result);
   });
+  window.musicStand = { viewer, camera, library, sync, settings: getSettings }; // for the Web Inspector
 
   if (signIn && signIn.inSheet) {
     // This copy of the app is running in Google's sign-in sheet: show only
-    // the note, not the score (and its camera) or Settings.
-    driveTest.reportRedirect(signIn);
+    // the note, not the score (and its camera), and don't sync from here.
     showSignInNote(signIn);
     return;
   }
 
   resumeLastView();
-  await route();
-  if (signIn) {
-    settingsUi.open();
-    driveTest.reportRedirect(signIn);
+  // A new hour of Google access, if needed, before the library is drawn, so
+  // the trip there and back is part of starting up.
+  if (!signIn && !location.hash.startsWith('#/file/')) {
+    const leaving = await sync.tripAtLaunch(() => { $('#boot-note').hidden = false; });
+    if (leaving) {
+      // Normally the page unloads now. If Google's page opened over the app
+      // instead (or the answer comes back as a jump within the page), start
+      // up anyway when the app is in view again, or after a while.
+      setTimeout(() => finishBoot(null), 10_000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) finishBoot(null); });
+      return;
+    }
   }
-  setupServiceWorker();
-  requestPersistence();
-
-  // Handy for debugging from the Web Inspector.
-  window.musicStand = { viewer, camera, library, settings: getSettings };
+  await finishBoot(signIn);
 }
 
 main().catch((e) => {

@@ -30,8 +30,13 @@
         <option value="added">Date added</option>
       </select>
       <button id="lib-add" class="btn primary"><span data-icon="plus"></span>Add PDF</button>
+      <button id="lib-sync" class="icon-btn sync-btn" aria-label="Google Drive sync" hidden><span data-icon="cloud"></span><i class="dot"></i></button>
       <button id="lib-settings" class="icon-btn" aria-label="Settings"><span data-icon="gear"></span></button>
     </header>
+    <div id="sync-banner" class="banner" hidden>
+      <span id="sync-banner-text"></span>
+      <button id="sync-review" class="btn small primary">Review</button>
+    </div>
     <div id="update-banner" class="banner" hidden>
       A new version of Music Stand is ready.
       <button id="update-reload" class="btn small primary">Update now</button>
@@ -164,27 +169,23 @@
         <label class="toggle"><span>Keep screen awake<small>While a score is open.</small></span><input type="checkbox" id="s-awake"></label>
       </section>
 
-      <section class="group" id="drive-test">
-        <h3>Google Drive (test)</h3>
-        <p class="hint">Checks how Google sign-in and Drive work on this device. It doesn’t touch your library. When you’re done, tap Copy report and send it to whoever is setting up sync.</p>
-        <div id="d-status" class="status-line"></div>
+      <section class="group" id="sync">
+        <h3>Google Drive</h3>
+        <p class="hint">Keep the same library on all your devices. Your scores are kept in a “Music Stand” folder in your Google Drive, which also makes Drive a backup of them. Add music with Add PDF: PDFs put into that folder from a computer don’t show up here.</p>
+        <div id="g-status" class="status-line"></div>
         <div class="row wrap">
-          <button id="d-popup" type="button" class="btn small">1. Sign in (pop-up)</button>
-          <button id="d-redirect" type="button" class="btn small">2. Sign in (redirect)</button>
-          <button id="d-silent" type="button" class="btn small">3. Renew silently</button>
-          <button id="d-drive" type="button" class="btn small">4. Test Drive</button>
+          <button id="g-connect" type="button" class="btn primary">Connect Google Drive</button>
+          <button id="g-sync" type="button" class="btn" hidden>Sync now</button>
+          <button id="g-review" type="button" class="btn primary" hidden>Review</button>
+          <button id="g-disconnect" type="button" class="btn" hidden>Disconnect</button>
+          <button id="g-copy" type="button" class="btn small">Copy sync report</button>
         </div>
-        <div class="row wrap">
-          <button id="d-copy" type="button" class="btn small primary">Copy report</button>
-          <button id="d-clear" type="button" class="btn small">Clear report</button>
-          <button id="d-signout" type="button" class="btn small">Sign out</button>
-        </div>
-        <pre id="d-log" class="drive-log" hidden></pre>
+        <p class="hint"><a href="privacy.html" target="_blank" rel="noopener">Privacy</a></p>
       </section>
 
       <section class="group">
         <h3>Backup</h3>
-        <p class="hint">Your library lives only on this device. Export a backup now and then and save it to Files or iCloud Drive. To copy your library to another device, import the backup there and choose Merge.</p>
+        <p class="hint">A backup is one file with all your scores and settings. Export one now and then and save it to Files or iCloud Drive. To copy your library to another device without Google Drive, import the backup there and choose Merge.</p>
         <div class="row wrap">
           <button id="b-export" type="button" class="btn">Export backup</button>
           <button id="b-save" type="button" class="btn primary" hidden>Save backup file</button>
@@ -198,6 +199,8 @@
       <p class="about">Music Stand <span id="app-version"></span></p>
     </div>
   </dialog>
+
+  <div id="boot-note" class="boot-note" hidden>Connecting to Google Drive…</div>
 
   <dialog id="modal" class="modal"></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

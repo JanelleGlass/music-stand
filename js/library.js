@@ -1,7 +1,8 @@
 // Library screen: grid of scores, add / rename / delete.
 import { listFiles, addPdf, renameFile, deleteFile, getThumb, ensureThumb, onLibraryChange } from './data.js';
 import { describePdfError } from './pdfdoc.js';
-import { $, esc, icon, formatBytes, toast, confirmDialog, promptDialog, actionSheet } from './ui.js';
+import { syncAccount } from './gdrive-auth.js';
+import { $, esc, icon, formatBytes, toast, confirmDialog, promptDialog, actionSheet, whileBusy } from './ui.js';
 
 export function initLibrary({ onOpen }) {
   const grid = $('#lib-grid');
@@ -17,7 +18,15 @@ export function initLibrary({ onOpen }) {
   try { sort.value = localStorage.getItem('ms:sort') || 'recent'; } catch { /* storage blocked */ }
 
   async function refresh() {
+    const before = new Map(files.map((f) => [f.id, f.hash]));
     files = await listFiles();
+    // A new version of a PDF (from Google Drive) needs a new thumbnail.
+    for (const f of files) {
+      if (before.has(f.id) && before.get(f.id) !== f.hash && thumbUrls.has(f.id)) {
+        URL.revokeObjectURL(thumbUrls.get(f.id));
+        thumbUrls.delete(f.id);
+      }
+    }
     render();
   }
 
@@ -66,7 +75,11 @@ export function initLibrary({ onOpen }) {
     }).catch(() => {});
   }
 
-  async function addFiles(list) {
+  function addFiles(list) {
+    return whileBusy(() => addEach(list));
+  }
+
+  async function addEach(list) {
     const pdfs = Array.from(list).filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
     if (!pdfs.length) {
       toast('Only PDF files can be added.');
@@ -113,7 +126,9 @@ export function initLibrary({ onOpen }) {
     } else if (choice === 'delete') {
       const ok = await confirmDialog({
         title: `Delete “${meta.name}”?`,
-        message: 'The PDF and its reading position are removed from this iPad. This cannot be undone unless you have a backup.',
+        message: syncAccount()
+          ? 'It’s removed from this iPad and your other devices. Google Drive keeps the PDF in its trash for 30 days.'
+          : 'The PDF and its reading position are removed from this iPad. This cannot be undone unless you have a backup.',
         ok: 'Delete',
         danger: true,
       });
