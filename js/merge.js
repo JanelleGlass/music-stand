@@ -1,5 +1,6 @@
 // Rules for bringing a backup into the library. No DOM or IndexedDB here, so
 // they can be unit tested (tests/merge.test.mjs).
+import { mergePage, pageIsEmpty, mergeFolder, restampFolder } from './notes-merge.js';
 
 // Finds the file on this device that a backup's file is a copy of: first by
 // id (it was copied here before), then by content hash (the same PDF was
@@ -86,15 +87,36 @@ export function takeIncoming(here, incoming) {
   return typeof here.updatedAt === 'number' && typeof incoming.updatedAt === 'number' && incoming.updatedAt > here.updatedAt;
 }
 
-// The backup records (reading places, notes, lists) to write, given the
+// How a backup's record meets the one here, per store. Returns the record
+// to write, or null to keep the one here.
+//   positions    this device's reading place wins (takeIncoming)
+//   annotations  a page's markings are combined, as sync does
+//   lists        folders are combined, as sync does; with Replace the
+//                backup's folders count as changed just now, so they win
+//                over changes on other devices when sync next runs
+export function combineRecord(store, here, incoming, { replace = false, now = Date.now() } = {}) {
+  if (store === 'annotations') {
+    const page = mergePage(here, incoming);
+    if (pageIsEmpty(page)) return null;
+    return { id: incoming.id, fileId: incoming.fileId, page: incoming.page, ...page, updatedAt: now };
+  }
+  if (store === 'lists') {
+    const folder = replace ? restampFolder(incoming, now) : incoming;
+    return mergeFolder(here, folder);
+  }
+  return takeIncoming(here, incoming) ? incoming : null;
+}
+
+// The backup records (reading places, markings, folders) to write, given the
 // records already here and the backup-id → local-id map from the files.
-export function recordsToWrite(here, incoming, remap) {
+export function recordsToWrite(here, incoming, remap, store = 'positions', options = {}) {
   const current = new Map(here.map((r) => [r.id, r]));
   const out = new Map();
   for (const raw of Array.isArray(incoming) ? incoming : []) {
     if (!raw || raw.id == null) continue;
-    const r = remapIds(raw, remap);
-    if (takeIncoming(current.get(r.id), r)) {
+    const incomingRec = remapIds(raw, remap);
+    const r = combineRecord(store, current.get(incomingRec.id), incomingRec, options);
+    if (r) {
       current.set(r.id, r);
       out.set(r.id, r);
     }

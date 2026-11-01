@@ -6,7 +6,9 @@ import { thresholds } from './wink-logic.js';
 import { syncAccount } from './gdrive-auth.js';
 import { $, toast, actionSheet, formatBytes, whileBusy } from './ui.js';
 
-export function initSettings({ camera, onOpenChange }) {
+// aroundImport(fn, { replace }): runs a backup import, kept apart from sync
+// and from an open score.
+export function initSettings({ camera, onOpenChange, aroundImport = (fn) => fn() }) {
   const dlg = $('#settings');
   const syncers = [];
   const sync = () => syncers.forEach((fn) => fn());
@@ -42,6 +44,7 @@ export function initSettings({ camera, onOpenChange }) {
   bindToggle('s-swap', 'winkSwap');
   bindToggle('s-night', 'nightMode');
   bindToggle('s-awake', 'keepAwake');
+  bindToggle('s-pencil', 'pencilDraws');
 
   const fps = $('#s-fps');
   fps.addEventListener('change', () => updateSettings({ winkFps: +fps.value }));
@@ -229,9 +232,9 @@ export function initSettings({ camera, onOpenChange }) {
       });
       if (!mode) return;
       const replace = mode === 'replace';
-      const res = await whileBusy(() => importBackup(backup, { replace }, (i, total, name) => {
+      const res = await whileBusy(() => aroundImport(() => importBackup(backup, { replace }, (i, total, name) => {
         bStatus.textContent = total ? `Importing ${i} of ${total}${name ? ` (${name})` : ''}…` : 'Importing…';
-      }));
+      }), { replace }));
       sync();
       const already = res.here ? ` ${res.here} ${res.here === 1 ? 'was' : 'were'} already on this device.` : '';
       if (replace) bStatus.textContent = `Restored ${scores(res.added)}.`;

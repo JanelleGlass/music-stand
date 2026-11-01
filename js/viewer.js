@@ -6,6 +6,7 @@
 // screen get a canvas, because iOS limits total canvas memory.
 import { openPdf, isCancel } from './pdfdoc.js';
 import { getFile, getFileBlob, getPosition, savePosition, getSettings } from './data.js';
+import { Ink } from './ink.js';
 
 const GAP = 10;                 // px between pages
 const PAD = 8;                  // px above the first and below the last page
@@ -43,10 +44,14 @@ export class Viewer extends EventTarget {
     this.scrollRaf = 0;
     this.saveTimer = 0;
     this.guideTimer = 0;
+    this.ink = new Ink(this);
 
     this.scroller.addEventListener('scroll', () => this.#onScroll(), { passive: true });
-    // Dragging the page takes over from a running page-turn animation.
-    this.scroller.addEventListener('touchmove', () => this.cancelAnimation(), { passive: true });
+    // Dragging the page takes over from a running page-turn animation (the
+    // Pencil writes instead).
+    this.scroller.addEventListener('touchmove', (e) => {
+      if (!(this.ink.pencilWrites && [...e.touches].some((t) => t.touchType === 'stylus'))) this.cancelAnimation();
+    }, { passive: true });
     this.scroller.addEventListener('wheel', () => this.cancelAnimation(), { passive: true });
     new ResizeObserver(() => this.#onResize()).observe(this.scroller);
     this.#setupTaps();
@@ -67,10 +72,12 @@ export class Viewer extends EventTarget {
       const to = Math.min(meta.pageCount, seg.to || meta.pageCount);
       for (let n = from; n <= to; n++) {
         const size = (meta.pageSizes && (meta.pageSizes[n - 1] || meta.pageSizes[0])) || [612, 792];
-        pages.push({ fileId: seg.fileId, num: n, w: size[0], h: size[1], top: 0, cssW: 0, cssH: 0, el: null, canvas: null, task: null, renderedGen: -1, failed: false });
+        pages.push({ fileId: seg.fileId, num: n, w: size[0], h: size[1], top: 0, cssW: 0, cssH: 0, el: null, canvas: null, ink: null, task: null, renderedGen: -1, failed: false });
       }
     }
     const pos = await getPosition(key);
+    if (gen !== this.openGen) return;
+    await this.ink.open(pages);
     if (gen !== this.openGen) return;
 
     this.key = key;
@@ -95,6 +102,7 @@ export class Viewer extends EventTarget {
   close() {
     this.#savePositionNow();
     this.cancelAnimation();
+    this.ink.close();
     this.openGen++;
     for (const p of this.pages) this.#release(p);
     this.pages = [];
@@ -137,6 +145,34 @@ export class Viewer extends EventTarget {
     cancelAnimationFrame(this.anim.raf);
     this.anim = null;
     this.#afterAnimation();
+  }
+
+  // Jumps to where a running page turn was going.
+  finishAnimation() {
+    if (!this.anim) return;
+    const to = this.anim.to;
+    cancelAnimationFrame(this.anim.raf);
+    this.anim = null;
+    this.scroller.scrollTop = to;
+    this.#afterAnimation();
+  }
+
+  // The page in the middle of the screen.
+  indexAtCenter() {
+    return this.#indexAt(this.scroller.scrollTop + this.scroller.clientHeight / 2);
+  }
+
+  // Whether some of page index is on the screen.
+  isOnScreen(index) {
+    const p = this.pages[index];
+    if (!p) return false;
+    const top = this.scroller.scrollTop;
+    return p.top + p.cssH > top && p.top < top + this.scroller.clientHeight;
+  }
+
+  // Draws what is waiting to be drawn (after a stroke, which holds it up).
+  refresh() {
+    this.#updateVisible();
   }
 
   #animateTo(to, duration) {
@@ -188,6 +224,7 @@ export class Viewer extends EventTarget {
 
   setZoom(z) {
     if (!this.pages.length || z === this.zoom) return;
+    this.ink.commit();
     const [idx, frac] = this.#topPosition();
     this.zoom = z;
     this.#layout();
@@ -256,6 +293,7 @@ export class Viewer extends EventTarget {
   #onResize() {
     if (!this.pages.length) return;
     if (this.scroller.clientWidth !== this.layoutWidth) {
+      this.ink.commit();
       const [idx, frac] = this.#topPosition();
       this.cancelAnimation();
       this.#layout();
@@ -303,7 +341,10 @@ export class Viewer extends EventTarget {
     this.keepTo = keepTo;
 
     for (const p of this.pages) {
-      if ((p.canvas || p.task) && !this.#inKeep(p)) this.#release(p);
+      const keep = this.#inKeep(p);
+      if ((p.canvas || p.task) && !keep) this.#release(p);
+      if (keep) this.ink.show(p);
+      else if (p.ink) this.ink.hide(p);
     }
 
     const cur = this.#indexAt(top + vh * 0.33);
@@ -320,8 +361,9 @@ export class Viewer extends EventTarget {
   }
 
   async #pump() {
-    // Don't start new renders mid-animation; the look-ahead pages are usually ready.
-    if (this.busy || this.anim) return;
+    // Don't start new renders mid-animation or mid-stroke; the look-ahead
+    // pages are usually ready.
+    if (this.busy || this.anim || this.ink.drawing) return;
     const next = this.want.find((p) => p.renderedGen !== this.layoutGen && !p.failed);
     if (!next) return;
     this.busy = true;
@@ -426,8 +468,9 @@ export class Viewer extends EventTarget {
   #setupTaps() {
     let tap = null;
     this.scroller.addEventListener('pointerdown', (e) => {
-      // Pencil is reserved for annotations; ignore taps that just stop a flick.
-      if (!e.isPrimary || e.pointerType === 'pen' || performance.now() - this.lastUserScrollAt < 120) {
+      // The Pencil writes notes, and so does a finger while the notes toolbar
+      // says so; ignore taps that just stop a flick.
+      if (!e.isPrimary || (e.pointerType === 'pen' && this.ink.pencilWrites) || this.ink.takesFingers || (e.pointerType === 'mouse' && this.ink.toolbarOpen) || performance.now() - this.lastUserScrollAt < 120) {
         tap = null;
         return;
       }
@@ -460,5 +503,6 @@ export class Viewer extends EventTarget {
 
   flushPosition() {
     this.#savePositionNow();
+    this.ink.flush();
   }
 }

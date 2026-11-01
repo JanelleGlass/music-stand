@@ -13,6 +13,7 @@ import { DriveError, getAbout, googleAnswers } from './gdrive.js';
 import { syncOnce, SyncStopped, SyncRefused } from './sync-engine.js';
 import { driveRemote } from './sync-remote.js';
 import { localStore } from './sync-local.js';
+import { dataPending } from './sync-data.js';
 import { onLibraryEdit, listFiles } from './data.js';
 
 const LOG_KEY = 'ms:sync:log';
@@ -64,10 +65,11 @@ export function initSync({ canSync, canReload, canLeave, confirmSwitch }) {
   let wakeLock = null;
   let offlineAtStart = false; // the start-up check found no internet
 
-  // Deletions not yet sent, or scores not yet in Drive, count as changes.
-  Promise.all([localStore.records(), listFiles()]).then(([r, files]) => {
+  // Deletions not yet sent, scores not yet in Drive, and markings or folders
+  // changed since the last sync count as changes.
+  Promise.all([localStore.records(), listFiles()]).then(async ([r, files]) => {
     lastSync = r.state.lastSync || 0;
-    if (connected()) edited = edited || r.tombs.size > 0 || files.some((f) => !r.links.has(f.id));
+    if (connected()) edited = edited || r.tombs.size > 0 || files.some((f) => !r.links.has(f.id)) || (await dataPending(localStore));
     emit();
   }).catch(() => {});
   document.addEventListener('pointerdown', () => { lastTouch = Date.now(); }, true);
@@ -179,6 +181,8 @@ export function initSync({ canSync, canReload, canLeave, confirmSwitch }) {
     if (r.renamed) parts.push(`${r.renamed} renamed`);
     if (r.deleted) parts.push(`${r.deleted} deleted here`);
     if (r.trashed) parts.push(`${r.trashed} moved to the Drive trash`);
+    if (r.notes) parts.push(`markings for ${r.notes} ${r.notes === 1 ? 'score' : 'scores'}`);
+    if (r.folders) parts.push(`${r.folders} ${r.folders === 1 ? 'folder' : 'folders'} updated`);
     if (r.failed) parts.push(`${r.failed} failed`);
     return parts.join(', ') || 'nothing to change';
   }
@@ -451,6 +455,12 @@ export function initSync({ canSync, canReload, canLeave, confirmSwitch }) {
         log(`Google wants a tap to sign in again (${result.error}).`);
         set('signin', `${signInMessage(result.error)}. Tap to sign in`);
       }
+    },
+
+    // Waits for a run under way to finish or pause (canSync() is false now).
+    async settle() {
+      const r = running;
+      if (r) await r.catch(() => {});
     },
 
     // The library is showing again after a score.

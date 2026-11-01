@@ -3,6 +3,8 @@ import { initLibrary } from './library.js';
 import { Viewer } from './viewer.js';
 import { WinkCamera } from './wink-camera.js';
 import { initSettings } from './settings-ui.js';
+import { initNotesUi } from './notes-ui.js';
+import { getFolders, scoresIn, setMember, FAVORITES } from './lists.js';
 import { describePdfError } from './pdfdoc.js';
 import { takeRedirectResult } from './gdrive-auth.js';
 import { initSync } from './sync.js';
@@ -18,8 +20,10 @@ let camera;
 let library;
 let settingsUi;
 let sync;
+let notesUi;
 let viewerActive = false;
 let settingsOpen = false;
+let importing = false; // a backup is being imported
 let barTimer = 0;
 let wakeLock = null;
 
@@ -60,6 +64,8 @@ function resumeLastView() {
 
 function showLibrary() {
   if (viewerActive) {
+    notesUi.close();
+    viewer.ink.setHidden(false);
     viewer.close();
     viewerActive = false;
     camera.release('viewer');
@@ -69,7 +75,7 @@ function showLibrary() {
   $('#library').hidden = false;
   document.title = 'Music Stand';
   rememberView();
-  library.refresh();
+  library.shown();
   if (sync) sync.libraryShown();
 }
 
@@ -99,6 +105,16 @@ async function showViewer(fileId) {
   touchFile(fileId);
   syncWink();
   requestWakeLock();
+  updateStar();
+}
+
+// The star in the top bar shows whether the open score is a favourite.
+async function updateStar() {
+  if (!viewerActive || !viewer.key) return;
+  const fav = scoresIn((await getFolders()).find((f) => f.id === FAVORITES)).has(viewer.key);
+  const b = $('#v-star');
+  b.setAttribute('aria-pressed', String(fav));
+  b.setAttribute('aria-label', fav ? 'Remove from Favorites' : 'Add to Favorites');
 }
 
 // ---------- Viewer chrome ----------
@@ -112,7 +128,7 @@ function showBar(autoHide = true) {
 
 function hideBar() {
   clearTimeout(barTimer);
-  if (settingsOpen) return;
+  if (settingsOpen || notesUi.isOpen) return;
   $('#viewer').classList.remove('bar-visible');
 }
 
@@ -127,6 +143,8 @@ function updateZoomLabel() {
 
 function turn(dir, source) {
   if (!viewerActive) return;
+  // Not while the Pencil is writing: the mark would streak across the page.
+  if (viewer.ink.busy) return;
   const moved = viewer.turn(dir);
   if (moved) {
     hideBar();
@@ -150,6 +168,13 @@ function flash(dir) {
 function setupViewerControls() {
   $('#v-back').addEventListener('click', () => go('#/'));
   $('#v-settings').addEventListener('click', () => settingsUi.open());
+  $('#v-star').addEventListener('click', async () => {
+    if (!viewer.key) return;
+    const on = $('#v-star').getAttribute('aria-pressed') !== 'true';
+    await setMember(FAVORITES, viewer.key, on);
+    toast(on ? 'Added to Favorites.' : 'Removed from Favorites.', 1400);
+    showBar();
+  });
   $('#v-zoom-in').addEventListener('click', () => { viewer.zoomStep(1); showBar(); });
   $('#v-zoom-out').addEventListener('click', () => { viewer.zoomStep(-1); showBar(); });
   $('#v-wink').addEventListener('click', () => {
@@ -177,14 +202,27 @@ function setupViewerControls() {
   });
   viewer.addEventListener('zoom', updateZoomLabel);
   viewer.addEventListener('tap', (e) => {
+    // With the markings tools open, fingers only scroll.
+    if (notesUi.isOpen) return;
     const fy = e.detail.fy;
     if (getSettings().tapToTurn && fy < 1 / 3) turn(-1, 'tap');
     else if (getSettings().tapToTurn && fy > 2 / 3) turn(1, 'tap');
     else toggleBar();
   });
-  // Face tracking shares the main thread; pause it while a turn animates.
+  // Face tracking shares the main thread; pause it while a turn animates and
+  // while the Pencil writes.
+  let settle = 0;
   viewer.addEventListener('animstart', () => { camera.paused = true; });
-  viewer.addEventListener('animend', () => { camera.paused = false; });
+  viewer.addEventListener('animend', () => { camera.paused = viewer.ink.busy; });
+  viewer.ink.addEventListener('inkstart', () => {
+    clearTimeout(settle);
+    camera.paused = true;
+  });
+  viewer.ink.addEventListener('inkend', () => {
+    clearTimeout(settle);
+    settle = setTimeout(() => { camera.paused = viewer.animating; }, 320);
+  });
+  viewer.ink.addEventListener('hint', (e) => toast(e.detail, 3000));
 
   window.addEventListener('keydown', (e) => {
     if (!viewerActive || settingsOpen || document.querySelector('dialog[open]')) return;
@@ -193,7 +231,16 @@ function setupViewerControls() {
     let dir = 0;
     if (k === 'ArrowDown' || k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && !e.shiftKey) || k === 'Enter') dir = 1;
     else if (k === 'ArrowUp' || k === 'ArrowLeft' || k === 'PageUp' || (k === ' ' && e.shiftKey)) dir = -1;
-    else if (k === 'Escape') { go('#/'); return; }
+    else if (k === 'Escape') {
+      if (notesUi.isOpen) notesUi.close();
+      else go('#/');
+      return;
+    } else if ((e.metaKey || e.ctrlKey) && k.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) viewer.ink.redo();
+      else viewer.ink.undo();
+      return;
+    }
     if (dir) {
       e.preventDefault();
       if (!e.repeat) turn(dir, 'key');
@@ -300,6 +347,29 @@ function setupServiceWorker() {
   }).catch((e) => console.warn('Service worker registration failed', e));
 }
 
+// ---------- Backup import ----------
+
+// An import rewrites markings and folders: no sync may write them meanwhile,
+// and an open score (Settings opens over it) is saved and closed first, so
+// its markings in memory can't be saved over the imported ones.
+async function aroundImport(fn, { replace = false } = {}) {
+  importing = true;
+  try {
+    if (viewerActive) {
+      go('#/');
+      if (viewerActive) showLibrary();
+    }
+    // The closing score's last save; with Replace, markings that couldn't be
+    // saved are dropped, so a later retry can't write them over the backup's.
+    await viewer.ink.flush();
+    if (replace) viewer.ink.store.discardPending();
+    await sync.settle();
+    return await fn();
+  } finally {
+    importing = false;
+  }
+}
+
 // ---------- Google sign-in ----------
 
 // Google's answer landed in the sign-in sheet shown over the Home Screen app,
@@ -329,11 +399,13 @@ async function main() {
   });
 
   viewer = new Viewer($('#viewer'));
+  notesUi = initNotesUi({ ink: viewer.ink, onOpenChange: (open) => (open ? showBar(false) : showBar()) });
   setupWink();
   setupViewerControls();
   library = initLibrary({ onOpen: (id) => go(`#/file/${encodeURIComponent(id)}`) });
   settingsUi = initSettings({
     camera,
+    aroundImport,
     onOpenChange: (open) => {
       settingsOpen = open;
       if (open) sync.prepare();
@@ -342,7 +414,7 @@ async function main() {
   });
   const inLibrary = () => !viewerActive && !location.hash.startsWith('#/file/');
   sync = initSync({
-    canSync: inLibrary,
+    canSync: () => inLibrary() && !importing,
     // Going to Google and back reloads the page: only with the library
     // showing, no dialog (or Settings) open and nothing under way.
     canReload: () => inLibrary() && !document.hidden && !document.querySelector('dialog[open]') && !isBusy(),
@@ -354,6 +426,7 @@ async function main() {
 
   // Restoring a backup can remove the score that's open.
   onLibraryChange(async () => {
+    updateStar();
     if (!viewerActive || !viewer.key || (await getFile(viewer.key))) return;
     viewer.key = null; // no reading place to save for it
     go('#/');

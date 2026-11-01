@@ -25,6 +25,7 @@
       <div class="brand"><img src="icons/icon.svg" alt="" width="30" height="30"><span>Music Stand</span></div>
       <label class="search"><span data-icon="search"></span><input id="lib-search" type="search" placeholder="Search" autocomplete="off" autocorrect="off" spellcheck="false"></label>
       <select id="lib-sort" class="select" aria-label="Sort">
+        <option value="folder">Folder order</option>
         <option value="recent">Recent</option>
         <option value="name">Name</option>
         <option value="added">Date added</option>
@@ -42,6 +43,12 @@
       <button id="update-reload" class="btn small primary">Update now</button>
     </div>
     <main class="lib-scroll">
+      <div id="folder-head" class="folder-head" hidden>
+        <h2><span id="folder-name"></span><small id="folder-count"></small></h2>
+        <button id="folder-add" class="btn small"><span data-icon="plus"></span>Add scores</button>
+        <button id="folder-rename" class="btn small">Rename</button>
+        <button id="folder-delete" class="btn small danger">Delete folder</button>
+      </div>
       <div id="lib-grid" class="grid"></div>
       <div id="lib-empty" class="empty" hidden>
         <div class="empty-art"><span data-icon="file"></span></div>
@@ -49,8 +56,10 @@
         <p>Add PDF scores from Files. They're stored on this device and work offline.</p>
         <button id="lib-add-empty" class="btn primary large"><span data-icon="plus"></span>Add PDF</button>
       </div>
-      <div id="lib-noresults" class="empty small" hidden><p>No scores match your search.</p></div>
+      <div id="lib-noresults" class="empty small" hidden><p id="lib-noresults-text">No scores match your search.</p><button id="search-all" class="btn" hidden>Search all scores</button></div>
+      <div id="folder-empty" class="empty small" hidden><p id="folder-empty-text"></p><div class="row-center"><button id="folder-empty-add" class="btn primary"><span data-icon="plus"></span>Add scores</button><button id="folder-empty-pdf" class="btn"><span data-icon="file"></span>Add PDF</button></div></div>
     </main>
+    <nav id="lib-tabs" class="tabbar" role="tablist" aria-label="Folders" hidden></nav>
     <input id="file-input" type="file" accept="application/pdf,.pdf" multiple hidden>
     <div id="drop-hint" class="drop-hint" hidden>Drop PDFs to add them</div>
   </section>
@@ -65,6 +74,9 @@
       <button id="v-back" class="icon-btn" aria-label="Back to library"><span data-icon="back"></span></button>
       <div id="v-title" class="vtitle"></div>
       <button id="v-page" class="chip" aria-label="Go to page">– / –</button>
+      <button id="v-star" class="icon-btn star-btn" aria-label="Add to Favorites" aria-pressed="false"><span data-icon="star"></span></button>
+      <button id="v-notes" class="icon-btn notes-btn" aria-label="Markings" aria-pressed="false"><span data-icon="pen"></span></button>
+      <div id="notes-tools" class="notes-tools" role="toolbar" aria-label="Markings" hidden></div>
       <div class="zoom" role="group" aria-label="Zoom">
         <button id="v-zoom-out" class="icon-btn" aria-label="Zoom out"><span data-icon="minus"></span></button>
         <span id="v-zoom" class="zoom-val">100%</span>
@@ -75,6 +87,8 @@
     </header>
 
     <div id="v-pill" class="pagepill"></div>
+
+    <div id="notes-pop" class="notes-pop" hidden></div>
 
     <div id="wink-hud" class="wink-hud off" aria-hidden="true">
       <svg viewBox="0 0 40 40"><circle class="track" cx="20" cy="20" r="16"/><circle class="prog" cx="20" cy="20" r="16"/></svg>
@@ -161,6 +175,11 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <section class="group">
+        <h3>Markings</h3>
+        <label class="toggle"><span>Apple Pencil marks right away<small>Write on the music with the Pencil whenever a score is open; fingers still scroll. Turn off to mark only after tapping the pen button (the Pencil then scrolls the music).</small></span><input type="checkbox" id="s-pencil"></label>
       </section>
 
       <section class="group">

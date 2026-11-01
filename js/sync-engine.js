@@ -9,6 +9,7 @@
 // simply finished by the next one. Uploads and downloads go in pieces that
 // are kept, so a big hymnal carries on where it stopped.
 import { planSync, pickFolder, needsDeleteConfirmation, scoreName, driveName, hashOf, scoreIdOf, FOLDER_NAME } from './sync-plan.js';
+import { syncData } from './sync-data.js';
 
 const DOWNLOAD_PIECE = 8 * 1024 * 1024;
 const STORAGE_SPARE = 300 * 1024 * 1024; // room to leave on the iPad after a download
@@ -52,12 +53,14 @@ function stopsTheRun(e) {
 //   decision            the person's answer about held deletions:
 //                       { delete: Set of ids } or { keep: Set of ids }
 //   now()               the time, in ms
-// Resolves to { uploaded, downloaded, renamed, deleted, trashed, failed, held }.
+// Resolves to { uploaded, downloaded, renamed, deleted, trashed, failed, held,
+// notes, folders }: notes and folders count the scores whose markings, and
+// the folders, that changed here.
 // held is null, or { ids, names, folders }: deletions waiting for the
 // person's say (too many at once to be sure they were meant). folders: ids of
 // Music Stand folders in the Drive trash with those scores in them.
 export async function syncOnce({ remote, local, log = () => {}, progress = () => {}, shouldStop = () => false, needsToken = () => false, decision = null, now = () => Date.now() }) {
-  const done = { uploaded: 0, downloaded: 0, renamed: 0, deleted: 0, trashed: 0, failed: 0, held: null };
+  const done = { uploaded: 0, downloaded: 0, renamed: 0, deleted: 0, trashed: 0, failed: 0, held: null, notes: 0, folders: 0 };
   const check = () => {
     if (shouldStop() || needsToken()) throw new SyncStopped();
   };
@@ -206,12 +209,36 @@ export async function syncOnce({ remote, local, log = () => {}, progress = () =>
   const pending = new Set([...plan.upload, ...plan.deleteLocal.map((d) => d.id)]);
   for (const id of uploads.keys()) if (!here.has(id) || !pending.has(id)) await local.dropUpload(id);
 
-  if (plan.upload.length) {
-    let folder = pickFolder(listing);
-    if (!folder) {
-      folder = await remote.createFolder(FOLDER_NAME, { msKind: 'folder' });
+  // The Music Stand folder new files go into, made once when first needed.
+  let inUse = pickFolder(listing);
+  const ensureFolder = async () => {
+    if (!inUse) {
+      inUse = await remote.createFolder(FOLDER_NAME, { msKind: 'folder' });
       log('Made the “Music Stand” folder in Google Drive.');
     }
+    return inUse;
+  };
+
+  // Markings and folders go before the PDFs, which can take long or stop
+  // for lack of storage. They wait while deletions are waiting for the
+  // person: the Music Stand folder may be in the trash.
+  const notesChanged = new Set();
+  const foldersChanged = new Set();
+  const dataRound = async () => {
+    if (done.held) return;
+    await each('sync markings and folders', async () => {
+      const r = await syncData({ remote, local, log, check, ensureFolder });
+      for (const id of r.notes) notesChanged.add(id);
+      for (const id of r.folders) foldersChanged.add(id);
+      done.notes = notesChanged.size;
+      done.folders = foldersChanged.size;
+    });
+  };
+  if (done.held) log('Markings and folders will sync once you decide about the deleted scores.');
+  await dataRound();
+
+  if (plan.upload.length) {
+    const folder = await ensureFolder();
     const byId = new Map((await local.scores()).map((s) => [s.id, s]));
     for (let i = 0; i < plan.upload.length; i++) {
       check();
@@ -254,45 +281,59 @@ export async function syncOnce({ remote, local, log = () => {}, progress = () =>
   for (const id of await local.partials()) if (!wanted.has(id)) await local.dropPartial(id);
 
   const byDriveId = new Map(listing.map((r) => [r.id, r]));
-  for (let i = 0; i < fetches.length; i++) {
-    check();
-    const r = byDriveId.get(fetches[i].driveId);
-    const into = fetches[i].id; // a new version of a score that is here
-    const name = scoreName(r.name);
-    const size = Number(r.size) || 0;
-    if ((await local.room()) < size + STORAGE_SPARE) {
-      const left = fetches.length - i;
-      throw new SyncRefused(`This iPad is nearly out of storage, so ${left} ${left === 1 ? 'score wasn’t' : 'scores weren’t'} downloaded.`);
-    }
-    await each(`download “${name}”`, async () => {
-      const blob = await downloadInPieces(r, size, (sent) => progress({ step: 'download', index: i, count: fetches.length, name, sent, size }));
-      const buf = await blob.arrayBuffer();
-      const hash = await sha256Hex(buf);
-      const expected = hashOf(r);
-      if (expected && hash !== expected) {
-        await local.dropPartial(r.id);
-        throw new Error('the PDF Drive sent doesn’t match the one that was uploaded');
-      }
+  // A storage refusal waits until the scores that did arrive have their
+  // markings and folders.
+  let refused = null;
+  try {
+    await fetchAll();
+  } catch (e) {
+    if (!(e instanceof SyncRefused)) throw e;
+    refused = e;
+  }
+  if (done.downloaded) await dataRound();
+  if (refused) throw refused;
+
+  async function fetchAll() {
+    for (let i = 0; i < fetches.length; i++) {
       check();
-      if (into) {
-        if (await local.replaceContent(into, blob, buf, hash)) done.downloaded++;
+      const r = byDriveId.get(fetches[i].driveId);
+      const into = fetches[i].id; // a new version of a score that is here
+      const name = scoreName(r.name);
+      const size = Number(r.size) || 0;
+      if ((await local.room()) < size + STORAGE_SPARE) {
+        const left = fetches.length - i;
+        throw new SyncRefused(`This iPad is nearly out of storage, so ${left} ${left === 1 ? 'score wasn’t' : 'scores weren’t'} downloaded.`);
+      }
+      await each(`download “${name}”`, async () => {
+        const blob = await downloadInPieces(r, size, (sent) => progress({ step: 'download', index: i, count: fetches.length, name, sent, size }));
+        const buf = await blob.arrayBuffer();
+        const hash = await sha256Hex(buf);
+        const expected = hashOf(r);
+        if (expected && hash !== expected) {
+          await local.dropPartial(r.id);
+          throw new Error('the PDF Drive sent doesn’t match the one that was uploaded');
+        }
+        check();
+        if (into) {
+          if (await local.replaceContent(into, blob, buf, hash)) done.downloaded++;
+          await local.dropPartial(r.id);
+          return;
+        }
+        // Linked first, so a score stored here is never without its link.
+        const fields = { id: scoreIdOf(r), name, hash, addedAt: Number((r.appProperties || {}).msAdded) || Date.parse(r.createdTime) || now() };
+        await local.setLink(fields.id, { driveId: r.id, name });
+        const id = await local.addScore(blob, buf, fields);
         await local.dropPartial(r.id);
-        return;
-      }
-      // Linked first, so a score stored here is never without its link.
-      const fields = { id: scoreIdOf(r), name, hash, addedAt: Number((r.appProperties || {}).msAdded) || Date.parse(r.createdTime) || now() };
-      await local.setLink(fields.id, { driveId: r.id, name });
-      const id = await local.addScore(blob, buf, fields);
-      await local.dropPartial(r.id);
-      if (id !== fields.id) {
-        await local.dropLink(fields.id);
-        // The same PDF was added here meanwhile, under its own name: no
-        // agreed name yet, so Drive's wins.
-        if (id) await local.setLink(id, { driveId: r.id, name: null });
-        return;
-      }
-      done.downloaded++;
-    });
+        if (id !== fields.id) {
+          await local.dropLink(fields.id);
+          // The same PDF was added here meanwhile, under its own name: no
+          // agreed name yet, so Drive's wins.
+          if (id) await local.setLink(id, { driveId: r.id, name: null });
+          return;
+        }
+        done.downloaded++;
+      });
+    }
   }
 
   // Pieces are kept as they arrive, so a stopped download carries on later.

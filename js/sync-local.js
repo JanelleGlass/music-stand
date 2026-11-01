@@ -9,11 +9,14 @@
 //   sync:part:<driveId>:<n> Blob             pieces of a download to carry on with
 //   sync:trashed:<driveId> at                 trashed here lately (Drive's listing can lag)
 //   sync:state             { account, lastSync }
+//   sync:data              { driveId, md5, fp }  the markings-and-folders file at the last sync (js/sync-data.js)
+//   sync:restore           { hashes, at }     a backup was restored with Replace: its markings win once
 import * as db from './db.js';
 import { listFiles, getFileBlob, storePdf, removeFile, sha256, notifyLibraryChange, storageEstimate } from './data.js';
+import { mergePage, pageIsEmpty, mergeFolder } from './notes-merge.js';
 
 async function records() {
-  const out = { links: new Map(), tombs: new Map(), uploads: new Map(), trashed: new Map(), state: {} };
+  const out = { links: new Map(), tombs: new Map(), uploads: new Map(), trashed: new Map(), state: {}, data: {}, restore: null };
   for (const [key, value] of await db.getAllWithPrefix('kv', 'sync:')) {
     const [, kind, id] = key.match(/^sync:([a-z]+):?(.*)$/) || [];
     if (kind === 'link') out.links.set(id, value);
@@ -21,6 +24,8 @@ async function records() {
     else if (kind === 'upload') out.uploads.set(id, value);
     else if (kind === 'trashed') out.trashed.set(id, value);
     else if (kind === 'state') out.state = value || {};
+    else if (kind === 'data') out.data = value || {};
+    else if (kind === 'restore') out.restore = value || null;
   }
   return out;
 }
@@ -116,6 +121,49 @@ export const localStore = {
   dropUpload: (id) => db.del('kv', `sync:upload:${id}`),
   setState: (patch) => db.update('kv', 'sync:state', (s) => ({ ...(s || {}), ...patch })),
 
+  // ---- Markings and folders (js/sync-data.js) ----
+
+  notesRecords: () => db.getAll('annotations'),
+  folders: () => db.getAll('lists'),
+
+  // Pages of markings and folders from Drive, combined with what is stored
+  // (a save made meanwhile is kept).
+  // Scores deleted meanwhile get nothing.
+  async applyData({ notes, lists }) {
+    const at = Date.now();
+    await db.transact(['files', 'annotations', 'lists'], (s) => {
+      const req = s.files.getAllKeys();
+      req.onsuccess = () => {
+        const here = new Set(req.result);
+        for (const { fileId, page, data } of notes) {
+          if (!here.has(fileId)) continue;
+          const key = `${fileId}:${page}`;
+          const r = s.annotations.get(key);
+          r.onsuccess = () => {
+            const merged = mergePage(r.result, data);
+            if (!pageIsEmpty(merged)) s.annotations.put({ id: key, fileId, page, ...merged, updatedAt: at });
+          };
+        }
+        for (const f of lists) {
+          const r = s.lists.get(f.id);
+          r.onsuccess = () => s.lists.put(mergeFolder(r.result, { ...f, members: f.members.filter((m) => here.has(m.score)) }));
+        }
+      };
+    });
+    notifyLibraryChange();
+  },
+
+  // restore: the restore mark this sync carried, now done with.
+  async setDataState(state, restore) {
+    await db.transact(['kv'], (s) => {
+      s.kv.put(state, 'sync:data');
+      if (restore) {
+        const req = s.kv.get('sync:restore');
+        req.onsuccess = () => { if (req.result && req.result.at === restore.at) s.kv.delete('sync:restore'); };
+      }
+    });
+  },
+
   // Connecting again with the same Google account carries on where sync left
   // off. With a different account, what was synced with the old one is
   // forgotten, so this library is merged into the new account's Drive.
@@ -124,7 +172,8 @@ export const localStore = {
     if (state.account === account) return;
     const keys = (await db.getAllWithPrefix('kv', 'sync:'))
       .map(([k]) => k)
-      .filter((k) => k !== 'sync:state');
+      // A restored backup's mark is about this library, not the old account.
+      .filter((k) => k !== 'sync:state' && k !== 'sync:restore');
     await db.transact(['kv'], (s) => {
       for (const k of keys) s.kv.delete(k);
       s.kv.put({ account }, 'sync:state');

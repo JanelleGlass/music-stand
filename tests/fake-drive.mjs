@@ -153,6 +153,64 @@ export class FakeDrive {
     return this.#copy(meta);
   }
 
+  // ---- The markings-and-folders file ----
+
+  async listData() {
+    this.calls.push('listData');
+    this.#maybeFail('listData', 'before');
+    return [...this.files.values()].map((f) => f.meta).filter((m) => !m.trashed && m.appProperties.msKind === 'data').map((m) => this.#copy(m));
+  }
+
+  async readData(id) {
+    this.calls.push(`readData:${id}`);
+    this.#maybeFail('readData', 'before');
+    const f = this.files.get(id);
+    if (!f || !f.bytes) throw Object.assign(new Error('File not found'), { status: 404 });
+    return new TextDecoder().decode(f.bytes);
+  }
+
+  async createData(folderId, text) {
+    this.calls.push('createData');
+    this.#maybeFail('createData', 'before');
+    const meta = this.#create({ name: 'Music Stand notes and folders.json', parents: [folderId], mimeType: 'application/json', appProperties: { msKind: 'data' } }, new TextEncoder().encode(text));
+    meta.md5Checksum = meta.sha256Checksum.slice(0, 32);
+    this.#maybeFail('createData', 'after');
+    return this.#copy(meta);
+  }
+
+  async writeData(id, text) {
+    this.calls.push(`writeData:${id}`);
+    this.#maybeFail('writeData', 'before');
+    const f = this.files.get(id);
+    if (!f) throw Object.assign(new Error('File not found'), { status: 404 });
+    f.bytes = new TextEncoder().encode(text);
+    f.meta.size = String(f.bytes.length);
+    f.meta.sha256Checksum = sha(f.bytes);
+    f.meta.md5Checksum = f.meta.sha256Checksum.slice(0, 32);
+    f.meta.modifiedTime = this.tick();
+    this.#maybeFail('writeData', 'after');
+    return this.#copy(f.meta);
+  }
+
+  async setAside(id) {
+    return this.update(id, { name: 'Music Stand notes and folders (unreadable).json', appProperties: { msKind: 'data-bad' } });
+  }
+
+  // The data file's content, parsed.
+  data() {
+    const live = this.live('data');
+    if (!live.length) return null;
+    return JSON.parse(new TextDecoder().decode(this.files.get(live[0].id).bytes));
+  }
+
+  // What the person can do to the file on the web.
+  webWriteData(id, text) {
+    const f = this.files.get(id);
+    f.bytes = new TextEncoder().encode(text);
+    f.meta.sha256Checksum = sha(f.bytes);
+    f.meta.md5Checksum = f.meta.sha256Checksum.slice(0, 32);
+  }
+
   async downloadRange(id, start, end) {
     this.calls.push(`range:${id}:${start}`);
     this.#maybeFail('download', 'before');

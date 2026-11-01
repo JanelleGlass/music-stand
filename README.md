@@ -48,6 +48,37 @@ never recorded or sent anywhere. See [privacy.html](privacy.html).
   - **Replace** makes this device match the backup, settings included, except
     for this device's eye calibration (which depends on its camera).
 
+## Markings, favorites and folders (Phase 2)
+
+- **Write on the music with the Apple Pencil** whenever a score is open:
+  fingerings, dynamics, breath marks, cuts. Fingers still scroll and turn
+  pages, and a quick Pencil tap works like a finger tap. While the Pencil is
+  writing, and for a moment after, page turns (winks, pedals, taps) are
+  ignored, so a mark never streaks across the page.
+- The **pen button** in the score's top bar opens the markings tools in place
+  of the page and zoom controls: pen (5 colours, 3 widths), highlighter
+  (4 colours, blended into the paper), eraser (takes pen marks before the
+  highlight under them), undo and redo, and Done. Tap the chosen pen or
+  highlighter again for its colours. The **⋯** menu has *Write with a finger*
+  (one finger writes, two scroll; also for a mouse on a computer),
+  *Hide markings* for a clean copy, and *Clear markings on page N*.
+- Markings are vector strokes on each page, so they keep their place at every
+  zoom, and show light on dark pages in night mode.
+- Settings › Markings › **Apple Pencil marks right away** can be turned off,
+  so the Pencil only writes after tapping the pen button (and scrolls
+  otherwise).
+- **Favorites and folders** run along the bottom of the library: All,
+  Favorites, your folders, and **+** for a new folder. Tap the star on a
+  score (or in its top bar) to make it a favorite. A score can be in any
+  number of folders. Inside a folder: *Add scores* (a list with search and
+  checkboxes), *Rename*, *Delete folder* (the scores stay in the library),
+  and the sort *Folder order* (the order scores were put in), so a service's
+  pieces stay in their places. Add PDF while a folder is open adds to it.
+- Deleting a score deletes its markings and takes it out of its folders.
+  Backups include markings and folders. With Google Drive sync on, Drive
+  keeps a deleted score's markings and folder places (by its PDF), so they
+  come back if the same PDF is added again or restored from the Drive trash.
+
 ### Using more than one device: Google Drive sync
 
 Settings › Google Drive › **Connect Google Drive** signs in with Google and
@@ -71,6 +102,12 @@ account:
 - If many scores disappear from Drive at once (for example the Music Stand
   folder went to the trash), nothing is deleted on the iPad until you choose,
   from the **Review** strip, to keep them or delete them.
+- **Markings, favorites and folders** sync too, in one small file in the
+  Music Stand folder ("Music Stand notes and folders.json"; leave it as it
+  is). A score is recognised by its PDF, so markings and folders come back if
+  a deleted score is restored from the Drive trash. Strokes written on two
+  devices at once are all kept; an erased stroke is erased everywhere; for
+  folder names and contents the latest change wins.
 - Reading positions and settings stay per device.
 - The app can only see files it made itself, so add music with **Add PDF**:
   PDFs dropped into the folder from a computer don't show up.
@@ -163,6 +200,8 @@ If you replace anything in `vendor/`, also bump `LIB_CACHE` in `sw.js`.
 - When installed to the Home Screen, iPadOS may ask for camera permission
   again after the app has been closed. That's an iPadOS rule.
 - Password-protected PDFs can't be opened; remove the password first.
+- If quick Pencil strokes go missing, turn off Settings › Apple Pencil ›
+  Scribble on the iPad (it can take strokes meant for web pages).
 
 ## Project layout
 
@@ -170,7 +209,13 @@ If you replace anything in `vendor/`, also bump `LIB_CACHE` in `sw.js`.
 index.html, css/app.css      UI
 js/app.js                    startup, routing, wink → page turn, keys, wake lock
 js/viewer.js                 continuous PDF viewer (lazy rendering, animated turns)
-js/library.js                library screen
+js/library.js                library screen, favorites and folders bar
+js/lists.js                  favorites and folders (data)
+js/ink.js, js/ink-draw.js    writing on the music: Pencil input, SVG layers, eraser
+js/notes-store.js            the open score's markings: undo, redo, saving
+js/notes-ui.js               the markings tools in the top bar
+js/notes-merge.js            rules for combining markings and folders from two devices (unit tested)
+js/sync-data.js              Drive sync of markings and folders (unit tested with fakes)
 js/settings-ui.js            settings sheet, wink tester, calibration, backup UI
 js/wink-logic.js             wink detection state machine (no DOM, unit tested)
 js/wink-camera.js            camera + MediaPipe → wink events
@@ -188,9 +233,8 @@ vendor/                      PDF.js 4.10.38 (legacy build), MediaPipe tasks-visi
 tests/                       node --test tests/*.test.mjs (fake Drive and devices for sync)
 ```
 
-The storage already has places for Phase 2 (annotations per page) and Phase 3
-(lists), and the viewer already takes a list of `{ file, page range }` pieces,
-so a setlist can scroll through several files as one continuous stand.
+The viewer already takes a list of `{ file, page range }` pieces, so a
+setlist (Phase 3) can scroll through several files as one continuous stand.
 
 To run locally, serve the folder with any static web server, for example
 `npx http-server -p 8080`, and open `http://localhost:8080`. The service worker

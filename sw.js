@@ -1,6 +1,6 @@
 // Offline support. Bump VERSION whenever you change any app file, so iPads
 // pick up the new version (the app then shows an "Update now" banner).
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const CORE_CACHE = `ms-core-${VERSION}`;
 // Third-party libraries change only when their files are replaced; bump LIB
 // then. Kept separate so app updates don't re-download ~15 MB of models.
@@ -17,11 +17,18 @@ const CORE = [
   'js/db.js',
   'js/gdrive-auth.js',
   'js/gdrive.js',
+  'js/ink.js',
+  'js/ink-draw.js',
   'js/library.js',
+  'js/lists.js',
   'js/merge.js',
+  'js/notes-merge.js',
+  'js/notes-store.js',
+  'js/notes-ui.js',
   'js/pdfdoc.js',
   'js/settings-ui.js',
   'js/sync.js',
+  'js/sync-data.js',
   'js/sync-engine.js',
   'js/sync-local.js',
   'js/sync-plan.js',

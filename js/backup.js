@@ -2,7 +2,7 @@
 // annotations, lists) plus every PDF under files/.
 import * as db from './db.js';
 import { ZipWriter, ZipReader } from './zip.js';
-import { getSettings, replaceSettings, notifyLibraryChange, sha256 } from './data.js';
+import { getSettings, replaceSettings, libraryEdited, sha256 } from './data.js';
 import { planFiles, summarise, recordsToWrite, restoredSettings } from './merge.js';
 
 const FORMAT = 1;
@@ -102,12 +102,13 @@ export async function previewImport({ zip, manifest }) {
 
 // Merge (the default) adds the scores this device doesn't have. A score that
 // is already here, matched by id or by identical content, keeps this device's
-// copy. The backup's reading places and notes for it move onto that copy only
-// where this device has none: a record already here is kept unless both carry
-// updatedAt and the backup's is newer (reading places don't, so this device's
-// always wins). This device's settings are left alone.
+// copy. Its reading place here wins; markings and folders from the backup are
+// combined with the ones here (js/merge.js combineRecord). This device's
+// settings are left alone.
 // Replace makes this device a copy of the backup, apart from its own eye
-// calibration.
+// calibration. With Google Drive sync on, the next sync combines it with
+// Drive's markings and folders; the backup's win where they disagree
+// (markings erased since come back; folders deleted since come back).
 export async function importBackup({ zip, manifest }, { replace }, onProgress = () => {}) {
   const files = manifest.files || [];
   checkFiles(zip, files); // before changing anything
@@ -141,14 +142,23 @@ export async function importBackup({ zip, manifest }, { replace }, onProgress = 
   }
 
   const writes = {};
-  for (const s of RECORD_STORES) writes[s] = recordsToWrite(await db.getAll(s), manifest[s], remap);
-  await db.transact(RECORD_STORES, (s) => {
+  const now = Date.now();
+  for (const s of RECORD_STORES) writes[s] = recordsToWrite(await db.getAll(s), manifest[s], remap, s, { replace, now });
+  // Restored markings win once over erasures made since (see sync-data.js).
+  let restore = null;
+  if (replace && writes.annotations.length) {
+    const hashOf = new Map((await db.getAll('files')).map((f) => [f.id, f.hash]));
+    const hashes = [...new Set(writes.annotations.map((r) => hashOf.get(r.fileId)).filter(Boolean))];
+    if (hashes.length) restore = { hashes, at: now };
+  }
+  await db.transact([...RECORD_STORES, 'kv'], (s) => {
     for (const name of RECORD_STORES) for (const r of writes[name]) s[name].put(r);
+    if (restore) s.kv.put(restore, 'sync:restore');
   });
   // Read the calibration now, not at the start: it may have been redone meanwhile.
   if (replace) await replaceSettings(restoredSettings(manifest.settings, getSettings()));
   onProgress(steps.length, steps.length, '');
-  notifyLibraryChange();
+  libraryEdited(); // sync sends on what came in
   const { fresh, here } = summarise(steps);
   return { added: fresh, here };
 }

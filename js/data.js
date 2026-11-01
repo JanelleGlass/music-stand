@@ -20,6 +20,12 @@ export const DEFAULT_SETTINGS = {
   winkSwap: false,         // swap if the camera reports eyes mirrored
   winkFps: 20,
   winkPreview: false,
+  // Notes
+  pencilDraws: true,       // Apple Pencil writes without opening the notes toolbar
+  notesTool: 'pen',        // 'pen' | 'hl' (last one used; the eraser isn't kept)
+  penColor: 0,
+  penWidth: 1,
+  hlColor: 0,
 };
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -67,17 +73,19 @@ export function notifyLibraryChange() {
   for (const fn of libraryListeners) fn();
 }
 
-// Changes the person made here (add, rename, delete), as opposed to ones
-// Google Drive sync brought in. Sync listens so it can send them on.
+// Changes the person made here (add, rename, delete, notes, folders), as
+// opposed to ones Google Drive sync brought in. Sync listens so it can send
+// them on.
 const editListeners = new Set();
 export function onLibraryEdit(fn) {
   editListeners.add(fn);
   return () => editListeners.delete(fn);
 }
-function edited() {
+export function libraryEdited() {
   notifyLibraryChange();
   for (const fn of editListeners) fn();
 }
+const edited = libraryEdited;
 
 export function newId() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -193,16 +201,24 @@ export async function deleteFile(id) {
   edited();
 }
 
-// Deletes a score's PDF, thumbnail, reading place and notes. tomb: the
-// sync note to leave, or null when sync itself is deleting it.
+// Deletes a score's PDF, thumbnail, reading place and notes, and takes it out
+// of its folders. tomb: the sync note to leave, or null when sync itself is
+// deleting it.
 export async function removeFile(id, tomb = null) {
   const notes = await db.getAllByIndex('annotations', 'fileId', id);
-  await db.transact(['files', 'blobs', 'thumbs', 'positions', 'annotations', 'kv'], (s) => {
+  await db.transact(['files', 'blobs', 'thumbs', 'positions', 'annotations', 'lists', 'kv'], (s) => {
     s.files.delete(id);
     s.blobs.delete(id);
     s.thumbs.delete(id);
     s.positions.delete(id);
     for (const n of notes) s.annotations.delete(n.id);
+    const req = s.lists.getAll();
+    req.onsuccess = () => {
+      for (const f of req.result) {
+        const members = (f.members || []).filter((m) => m.score !== id);
+        if (members.length !== (f.members || []).length) s.lists.put({ ...f, members });
+      }
+    };
     if (tomb) s.kv.put(tomb, `sync:tomb:${id}`);
   });
 }

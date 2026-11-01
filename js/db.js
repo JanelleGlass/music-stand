@@ -36,7 +36,11 @@ function openDb() {
     };
     req.onsuccess = () => {
       const db = req.result;
-      db.onversionchange = () => db.close();
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      db.onclose = () => { dbPromise = null; }; // closed by the system
       resolve(db);
     };
     req.onerror = () => reject(req.error);
@@ -44,6 +48,22 @@ function openDb() {
   });
   dbPromise.catch(() => { dbPromise = null; });
   return dbPromise;
+}
+
+// Runs use(tx) on a new transaction, straight away (a transaction must get
+// its first request before anything else is awaited). iPadOS can drop the
+// connection while the app is in the background; then it is opened again.
+async function withTx(stores, mode, use) {
+  const db = await openDb();
+  let tx;
+  try {
+    tx = db.transaction(stores, mode);
+  } catch (e) {
+    if (e.name !== 'InvalidStateError') throw e;
+    dbPromise = null;
+    tx = (await openDb()).transaction(stores, mode);
+  }
+  return use(tx);
 }
 
 function wrap(req) {
@@ -62,83 +82,80 @@ function done(tx) {
   });
 }
 
-export async function get(store, key) {
-  const db = await openDb();
-  return wrap(db.transaction(store).objectStore(store).get(key));
+export function get(store, key) {
+  return withTx(store, 'readonly', (tx) => wrap(tx.objectStore(store).get(key)));
 }
 
-export async function getAll(store) {
-  const db = await openDb();
-  return wrap(db.transaction(store).objectStore(store).getAll());
+export function getAll(store) {
+  return withTx(store, 'readonly', (tx) => wrap(tx.objectStore(store).getAll()));
 }
 
-export async function getAllKeys(store) {
-  const db = await openDb();
-  return wrap(db.transaction(store).objectStore(store).getAllKeys());
+export function getAllKeys(store) {
+  return withTx(store, 'readonly', (tx) => wrap(tx.objectStore(store).getAllKeys()));
 }
 
 // [key, value] pairs of every entry whose key is a string starting with prefix.
 export async function getAllWithPrefix(store, prefix) {
-  const db = await openDb();
-  const s = db.transaction(store).objectStore(store);
   const range = IDBKeyRange.bound(prefix, prefix + '￿');
-  const [keys, values] = await Promise.all([wrap(s.getAllKeys(range)), wrap(s.getAll(range))]);
+  const [keys, values] = await withTx(store, 'readonly', (tx) => {
+    const s = tx.objectStore(store);
+    return Promise.all([wrap(s.getAllKeys(range)), wrap(s.getAll(range))]);
+  });
   return keys.map((k, i) => [k, values[i]]);
 }
 
-export async function getAllByIndex(store, index, value) {
-  const db = await openDb();
-  return wrap(db.transaction(store).objectStore(store).index(index).getAll(value));
+export function getAllByIndex(store, index, value) {
+  return withTx(store, 'readonly', (tx) => wrap(tx.objectStore(store).index(index).getAll(value)));
 }
 
-export async function put(store, value, key) {
-  const db = await openDb();
-  const tx = db.transaction(store, 'readwrite');
-  if (key === undefined) tx.objectStore(store).put(value);
-  else tx.objectStore(store).put(value, key);
-  return done(tx);
+export function put(store, value, key) {
+  return withTx(store, 'readwrite', (tx) => {
+    if (key === undefined) tx.objectStore(store).put(value);
+    else tx.objectStore(store).put(value, key);
+    return done(tx);
+  });
 }
 
-export async function del(store, key) {
-  const db = await openDb();
-  const tx = db.transaction(store, 'readwrite');
-  tx.objectStore(store).delete(key);
-  return done(tx);
+export function del(store, key) {
+  return withTx(store, 'readwrite', (tx) => {
+    tx.objectStore(store).delete(key);
+    return done(tx);
+  });
 }
 
-export async function clear(store) {
-  const db = await openDb();
-  const tx = db.transaction(store, 'readwrite');
-  tx.objectStore(store).clear();
-  return done(tx);
+export function clear(store) {
+  return withTx(store, 'readwrite', (tx) => {
+    tx.objectStore(store).clear();
+    return done(tx);
+  });
 }
 
 // Reads one entry and writes back what fn returns, in one transaction, so
 // nothing can change it in between. fn returning undefined writes nothing.
 // Resolves to whether it wrote.
-export async function update(store, key, fn) {
-  const db = await openDb();
-  const tx = db.transaction(store, 'readwrite');
-  const s = tx.objectStore(store);
-  let wrote = false;
-  const req = s.get(key);
-  req.onsuccess = () => {
-    const next = fn(req.result);
-    if (next === undefined) return;
-    wrote = true;
-    if (s.keyPath === null) s.put(next, key);
-    else s.put(next);
-  };
-  await done(tx);
-  return wrote;
+export function update(store, key, fn) {
+  return withTx(store, 'readwrite', async (tx) => {
+    const s = tx.objectStore(store);
+    let wrote = false;
+    const req = s.get(key);
+    req.onsuccess = () => {
+      const next = fn(req.result);
+      if (next === undefined) return;
+      wrote = true;
+      if (s.keyPath === null) s.put(next, key);
+      else s.put(next);
+    };
+    await done(tx);
+    return wrote;
+  });
 }
 
 // Run several operations atomically. fn receives { storeName: IDBObjectStore }.
-export async function transact(stores, fn) {
-  const db = await openDb();
-  const tx = db.transaction(stores, 'readwrite');
-  const map = {};
-  for (const s of stores) map[s] = tx.objectStore(s);
-  fn(map);
-  return done(tx);
+export function transact(stores, fn) {
+  return withTx(stores, 'readwrite', (tx) => {
+    const map = {};
+    for (const s of stores) map[s] = tx.objectStore(s);
+    fn(map);
+    return done(tx);
+  });
 }

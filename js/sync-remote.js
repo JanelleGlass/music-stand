@@ -2,9 +2,27 @@
 // (tests/fake-drive.mjs is the test version).
 import * as drive from './gdrive.js';
 import { FOLDER_MIME } from './sync-plan.js';
+import { DATA_NAME } from './sync-data.js';
 
 // Everything the app made for sync, in the trash or not.
 const LISTING = "(appProperties has { key='msKind' and value='score' } or appProperties has { key='msKind' and value='folder' } or appProperties has { key='msKind' and value='retired' }) and (trashed = true or trashed = false)";
+
+const DATA_LISTING = "appProperties has { key='msKind' and value='data' } and trashed = false";
+// Drive takes files up to 5 MB in one request; a bigger data file goes the
+// resumable way, in one piece.
+const ONE_REQUEST = 4 * 1024 * 1024;
+const DATA_DETAILS = {
+  name: DATA_NAME,
+  mimeType: 'application/json',
+  appProperties: { msKind: 'data' },
+  description: 'Music Stand keeps your markings, favorites and folders here. Leave this file as it is.',
+};
+
+async function sendWhole(session, blob) {
+  const r = await drive.uploadChunk(session, blob, 0, blob.size);
+  if (!r.file) throw new drive.DriveError(0, 'Google Drive didn’t take the whole notes-and-folders file.');
+  return r.file;
+}
 
 const CHUNK = 32 * 256 * 1024; // 8 MiB; pieces must be multiples of 256 KiB
 const MAX_FAILURES = 5;
@@ -37,6 +55,22 @@ export function driveRemote(getToken) {
     move: (id, from, to) => drive.updateFile(getToken(), id, {}, undefined, { addParents: to, removeParents: from }),
 
     download: (id) => drive.download(getToken(), id),
+
+    // The markings-and-folders file (js/sync-data.js).
+    listData: () => drive.listFiles(getToken(), DATA_LISTING),
+    readData: (id) => drive.downloadText(getToken(), id),
+    async createData(folderId, text) {
+      const blob = new Blob([text], { type: 'application/json' });
+      if (blob.size <= ONE_REQUEST) return drive.createTextFile(getToken(), { ...DATA_DETAILS, parents: [folderId] }, text);
+      return sendWhole(await drive.startUpload(getToken(), { ...DATA_DETAILS, parents: [folderId] }, blob.size, 'application/json'), blob);
+    },
+    async writeData(id, text) {
+      const blob = new Blob([text], { type: 'application/json' });
+      if (blob.size <= ONE_REQUEST) return drive.updateTextFile(getToken(), id, text);
+      return sendWhole(await drive.startUpdateUpload(getToken(), id, blob.size, 'application/json'), blob);
+    },
+    // A file that can't be read is kept, out of the way, rather than lost.
+    setAside: (id) => drive.updateFile(getToken(), id, { name: 'Music Stand notes and folders (unreadable).json', appProperties: { msKind: 'data-bad' } }),
 
     // Bytes start..end of a file. whole: Drive sent the entire file instead.
     async downloadRange(id, start, end) {

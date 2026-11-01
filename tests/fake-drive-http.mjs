@@ -20,6 +20,24 @@ export function fakeDriveFetch(drive, { pageSize = 1000, user = { displayName: '
   const error = (status, message, reason = '') => json(status, { error: { code: status, message, errors: [{ reason }] } });
   const shape = (url, meta) => (url.searchParams.get('fields') ? meta : MINIMAL(meta));
 
+  // The files a listing query asks for: the msKind values it names, and
+  // whether it wants trashed files too.
+  function matches(q, m) {
+    if (!q) return true;
+    const kinds = [...q.matchAll(/value='([^']+)'/g)].map((x) => x[1]);
+    if (kinds.length && !kinds.includes((m.appProperties || {}).msKind)) return false;
+    if (/trashed = false/.test(q) && !/trashed = true/.test(q) && m.trashed) return false;
+    return true;
+  }
+
+  // A multipart/related body: [metadata JSON, content text].
+  function multipart(init, headers) {
+    const boundary = ((headers.get('Content-Type') || '').match(/boundary=(\S+)/) || [])[1];
+    const parts = String(init.body).split(`--${boundary}`).slice(1, -1)
+      .map((p) => p.slice(p.indexOf('\r\n\r\n') + 4).replace(/\r\n$/, ''));
+    return { metadata: JSON.parse(parts[0] || '{}'), text: parts[1] || '' };
+  }
+
   async function bodyBytes(body) {
     if (body == null) return new Uint8Array(0);
     return new Uint8Array(await new Response(body).arrayBuffer());
@@ -64,6 +82,20 @@ export function fakeDriveFetch(drive, { pageSize = 1000, user = { displayName: '
 
     if (p === '/drive/v3/about') return json(200, { user });
 
+    if (p === '/upload/drive/v3/files' && method === 'POST' && url.searchParams.get('uploadType') === 'multipart') {
+      const { metadata, text } = multipart(init, headers);
+      if ((metadata.appProperties || {}).msKind !== 'data') return error(400, 'The fake only takes the data file this way');
+      return json(200, shape(url, await drive.createData(metadata.parents[0], text)));
+    }
+    const media = p.match(/^\/upload\/drive\/v3\/files\/([^/]+)$/);
+    if (media && method === 'PATCH') {
+      const id = decodeURIComponent(media[1]);
+      if (!drive.files.has(id)) return error(404, `File not found: ${id}`, 'notFound');
+      const { metadata, text } = multipart(init, headers);
+      if (Object.keys(metadata).length) await drive.update(id, metadata);
+      return json(200, shape(url, await drive.writeData(id, text)));
+    }
+
     if (p === '/upload/drive/v3/files' && method === 'POST') {
       if (url.searchParams.get('uploadType') !== 'resumable') return error(400, 'Only resumable uploads');
       const id = `up${++seq}`;
@@ -79,7 +111,7 @@ export function fakeDriveFetch(drive, { pageSize = 1000, user = { displayName: '
     }
 
     if (p === '/drive/v3/files' && method === 'GET') {
-      const all = await drive.list();
+      const all = [...drive.files.values()].map((f) => JSON.parse(JSON.stringify(f.meta))).filter((m) => matches(url.searchParams.get('q'), m));
       const start = Number(url.searchParams.get('pageToken') || 0);
       const size = Math.min(pageSize, Number(url.searchParams.get('pageSize') || 100));
       const page = all.slice(start, start + size);

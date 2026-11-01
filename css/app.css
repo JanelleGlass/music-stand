@@ -128,7 +128,7 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 .grid {
   display: grid; gap: 22px 18px;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  padding: 20px max(18px, env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  padding: 20px max(18px, env(safe-area-inset-right)) 40px max(18px, env(safe-area-inset-left));
 }
 
 .card { position: relative; }
@@ -181,7 +181,7 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 .page .pnum { color: #c9c9c9; font-size: 28px; font-weight: 600; }
 .page.ready .pnum { display: none; }
 .page.failed::after { content: "Couldn't draw this page"; color: #a33; font-size: 15px; position: absolute; bottom: 20px; }
-.page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 
 .night .page { background: #121212; }
 .night .page canvas.pdf { filter: invert(1) hue-rotate(180deg); }
@@ -396,3 +396,122 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 }
 .signin-note h2 { margin: 0; font-size: 22px; }
 .signin-note p { margin: 0; color: var(--muted); max-width: 26em; }
+
+/* ---------- Notes (Pencil) ---------- */
+.page svg.ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.page svg.ink path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+/* Highlighter blends into the paper: multiply on white, screen on the night page. */
+.page svg.ink-hl { z-index: 1; mix-blend-mode: multiply; opacity: 0.45; }
+.night .page svg.ink-hl { mix-blend-mode: screen; opacity: 0.4; }
+.page svg.ink-pen { z-index: 2; }
+.page svg.ink-live { z-index: 3; will-change: transform; }
+.page svg.ink-live.is-hl { z-index: 1; mix-blend-mode: multiply; opacity: 0.45; }
+.night .page svg.ink-live.is-hl { mix-blend-mode: screen; opacity: 0.4; }
+#viewer.notes-hidden .page svg.ink { display: none; }
+
+/* Markings tools take the place of the page, zoom and wink controls. */
+.vbar.marking > #v-page, .vbar.marking > .zoom, .vbar.marking > #v-wink, .vbar.marking > #v-settings,
+.vbar.marking > #v-star, .vbar.marking > #v-notes { display: none; }
+.notes-tools { display: flex; align-items: center; gap: 2px; }
+.notes-tools .sep { width: 1px; height: 26px; margin: 0 4px; background: rgba(255, 255, 255, 0.18); }
+.notes-tools .icon-btn { position: relative; }
+.notes-tools .icon-btn[aria-pressed="true"] { background: rgba(255, 255, 255, 0.16); }
+.notes-tools .icon-btn:disabled { opacity: 0.35; }
+.notes-tools .icon-btn .tip { position: absolute; left: 50%; bottom: 5px; width: 14px; height: 4px; margin-left: -7px; border-radius: 2px; }
+.notes-tools .btn.small { margin-left: 4px; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.notes-btn.off { opacity: 0.55; }
+.notes-btn.off::after { content: ""; position: absolute; width: 26px; height: 2px; background: currentColor; transform: rotate(-45deg); border-radius: 1px; }
+.notes-btn { position: relative; }
+.star-btn[aria-pressed="true"] { color: var(--accent); }
+.star-btn[aria-pressed="true"] .ico { fill: currentColor; }
+
+.notes-pop {
+  position: absolute; z-index: 12; top: calc(env(safe-area-inset-top) + 58px);
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap; max-width: calc(100vw - 24px);
+  padding: 8px 10px; border-radius: 16px;
+  background: var(--bar); color: var(--bar-text);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.notes-pop .sep { width: 1px; align-self: stretch; margin: 4px; background: rgba(255, 255, 255, 0.18); }
+.swatch { width: 40px; height: 40px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; background: transparent; }
+.swatch i { width: 26px; height: 26px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.swatch[aria-checked="true"] { border-color: var(--bar-text); }
+.size-btn { width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; color: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.size-btn i { display: block; border-radius: 50%; background: currentColor; }
+.size-btn[aria-checked="true"] { background: rgba(255, 255, 255, 0.18); }
+.scroller.finger-ink { touch-action: none; }
+
+/* ---------- Favorites & folders ---------- */
+.tabbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px max(16px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  border-top: 1px solid var(--line); background: var(--bg);
+}
+/* All and Favorites stay put; the folders scroll between them and the + button. */
+.tab-scroll {
+  flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 18px), transparent 100%);
+  padding: 0 12px 0 8px;
+  scroll-padding-inline: 12px 18px; /* a chip scrolled into view lands clear of the fade */
+}
+.tab-scroll::-webkit-scrollbar { display: none; }
+.tab {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--line);
+  background: var(--surface); font-weight: 600; font-size: 15px; cursor: pointer; white-space: nowrap; max-width: 200px;
+}
+.tab span { overflow: hidden; text-overflow: ellipsis; }
+.tab .ico { width: 18px; height: 18px; }
+.tab .count { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; flex: none; }
+.tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tab[aria-selected="true"] .count { color: inherit; opacity: 0.8; }
+.tab[aria-selected="true"] .ico { fill: currentColor; }
+.tab.add { width: 40px; padding: 0; justify-content: center; border-style: dashed; background: transparent; color: var(--muted); }
+#library:not([hidden]) ~ .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
+.row-center { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+.folder-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left));
+}
+.folder-head h2 { margin: 0 auto 0 0; font-size: 22px; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.folder-head h2 span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-head small { color: var(--muted); font-size: 15px; font-weight: 500; white-space: nowrap; }
+
+/* The star sits on the thumbnail's corner, on a small disc so it shows on white paper. */
+.card-star { position: absolute; top: 2px; right: 2px; color: #fff; }
+.card-star::before { content: ""; position: absolute; width: 32px; height: 32px; border-radius: 50%; background: rgba(20, 22, 26, 0.42); }
+.card-star .ico { position: relative; width: 20px; height: 20px; }
+.card-star[aria-pressed="true"] { color: #ffc93c; }
+.card-star[aria-pressed="true"] .ico { fill: currentColor; }
+
+.pick-list { max-height: min(56vh, 520px); overflow-y: auto; margin: 10px -20px 0; padding: 0 20px; -webkit-overflow-scrolling: touch; }
+.pick-row { display: flex; align-items: center; gap: 12px; min-height: 48px; border-top: 1px solid var(--line); cursor: pointer; }
+.pick-row:first-child { border-top: 0; }
+.pick-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-row input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.pick-empty { color: var(--muted); padding: 16px 0; text-align: center; }
+
+/* Narrow windows (Split View, Slide Over): smaller tabs and markings tools,
+   so the folders and the Done button stay in reach. */
+@media (max-width: 560px) {
+  .tabbar { gap: 4px; padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+  .tab { padding: 0 10px; }
+  .tab[data-tab="favorites"] > span:not(.count) { display: none; }
+  .tab-scroll { padding: 0 8px 0 4px; }
+  .vbar.marking > #v-title { display: none; }
+  .vbar.marking { justify-content: space-between; }
+  .notes-tools .icon-btn { width: 36px; }
+  .notes-tools .sep { margin: 0 2px; }
+}
+@media (max-width: 360px) {
+  .notes-tools .icon-btn { width: 31px; }
+  .notes-tools .btn.small { padding: 0 8px; margin-left: 2px; }
+  .vbar.marking { padding-left: 4px; padding-right: 4px; }
+}
+@media (max-width: 380px) {
+  /* The page, wink and settings buttons stay on screen; the star is on the library cards too. */
+  .vbar:not(.marking) > #v-star, .vbar:not(.marking) #v-zoom { display: none; }
+}

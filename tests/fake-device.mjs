@@ -2,6 +2,7 @@
 // with the same surface as the app's local adapter (js/sync-local.js), and the
 // things a person does in the app (add, rename, delete).
 import { sha256Hex as sha } from './sha256.mjs';
+import { mergePage, pageIsEmpty, mergeFolder } from '../js/notes-merge.js';
 
 const randomUUID = () => crypto.randomUUID();
 
@@ -14,6 +15,9 @@ export class FakeDevice {
     this.positions = new Map(); // id -> { id, page }
     this.kv = new Map(); // 'sync:…' -> value
     this.parts = new Map(); // driveId -> [Blob]
+    this.annotations = new Map(); // "id:page" -> { id, fileId, page, strokes, erased }
+    this.lists = new Map(); // folderId -> folder record (members by score id)
+    this.seq = 0;
     this.free = Infinity;
     this.failures = [];
   }
@@ -51,10 +55,69 @@ export class FakeDevice {
 
   delete(id) {
     const f = this.files.get(id);
+    this.#forget(id);
+    this.kv.set(`sync:tomb:${id}`, { hash: f.hash, at: this.now() });
+  }
+
+  #forget(id) {
     this.files.delete(id);
     this.blobs.delete(id);
     this.positions.delete(id);
-    this.kv.set(`sync:tomb:${id}`, { hash: f.hash, at: this.now() });
+    for (const [k, r] of this.annotations) if (r.fileId === id) this.annotations.delete(k);
+    for (const f of this.lists.values()) f.members = f.members.filter((m) => m.score !== id);
+  }
+
+  // Draws a stroke on a page; returns its id.
+  draw(id, page, label = 'mark') {
+    const sid = `${this.name}-${label}-${++this.seq}`;
+    this.#notesPage(id, page, { strokes: [{ id: sid, at: this.now(), tool: 'pen', color: '#1d1d1f', w: 2, pts: [0, 0, 10, 10] }], erased: [] });
+    return sid;
+  }
+
+  erase(id, page, strokeId) {
+    this.#notesPage(id, page, { strokes: [], erased: [strokeId] });
+  }
+
+  #notesPage(id, page, change) {
+    const key = `${id}:${page}`;
+    const merged = mergePage(this.annotations.get(key), change);
+    this.annotations.set(key, { id: key, fileId: id, page, ...merged });
+  }
+
+  // The ids of the strokes on a page.
+  marks(id, page) {
+    const r = this.annotations.get(`${id}:${page}`);
+    return r ? r.strokes.map((s) => s.id).sort() : [];
+  }
+
+  makeFolder(name, folderId = `${this.name}-folder-${++this.seq}`) {
+    const t = this.now();
+    this.lists.set(folderId, { id: folderId, name, nameAt: t, createdAt: t, deleted: false, deletedAt: 0, members: [] });
+    return folderId;
+  }
+
+  renameFolder(folderId, name) {
+    const f = this.lists.get(folderId);
+    this.lists.set(folderId, { ...f, name, nameAt: this.now() });
+  }
+
+  deleteFolder(folderId) {
+    const f = this.lists.get(folderId);
+    this.lists.set(folderId, { ...f, deleted: true, deletedAt: this.now() });
+  }
+
+  setMember(folderId, scoreId, inFolder) {
+    const f = this.lists.get(folderId) || { id: folderId, name: 'Favorites', nameAt: 0, createdAt: this.now(), deleted: false, deletedAt: 0, members: [] };
+    const members = f.members.filter((m) => m.score !== scoreId);
+    members.push({ score: scoreId, in: inFolder, at: this.now() });
+    this.lists.set(folderId, { ...f, members });
+  }
+
+  // Names of the scores in a folder, or null if there's no such folder here.
+  folderNames(folderId) {
+    const f = this.lists.get(folderId);
+    if (!f || f.deleted) return null;
+    return f.members.filter((m) => m.in && this.files.has(m.score)).map((m) => this.files.get(m.score).name).sort();
   }
 
   byName(name) {
@@ -79,6 +142,8 @@ export class FakeDevice {
       uploads: pick('sync:upload:'),
       trashed: pick('sync:trashed:'),
       state: structuredClone(this.kv.get('sync:state') || {}),
+      data: structuredClone(this.kv.get('sync:data') || {}),
+      restore: structuredClone(this.kv.get('sync:restore') || null),
     };
   }
 
@@ -116,9 +181,7 @@ export class FakeDevice {
   }
 
   async deleteScore(id) {
-    this.files.delete(id);
-    this.blobs.delete(id);
-    this.positions.delete(id);
+    this.#forget(id);
   }
 
   async rekey(from, to) {
@@ -157,4 +220,21 @@ export class FakeDevice {
   async forgetTrashed(driveId) { this.kv.delete(`sync:trashed:${driveId}`); }
   async dropUpload(id) { this.kv.delete(`sync:upload:${id}`); }
   async setState(patch) { this.kv.set('sync:state', { ...(this.kv.get('sync:state') || {}), ...patch }); }
+
+  async notesRecords() { return [...this.annotations.values()].map((r) => structuredClone(r)); }
+  async folders() { return [...this.lists.values()].map((f) => structuredClone(f)); }
+  async applyData({ notes, lists }) {
+    this.#maybeFail('applyData');
+    for (const { fileId, page, data } of notes) {
+      if (!this.files.has(fileId)) continue;
+      const key = `${fileId}:${page}`;
+      const merged = mergePage(this.annotations.get(key), data);
+      if (!pageIsEmpty(merged)) this.annotations.set(key, { id: key, fileId, page, ...merged });
+    }
+    for (const f of lists) this.lists.set(f.id, mergeFolder(this.lists.get(f.id), { ...f, members: f.members.filter((m) => this.files.has(m.score)) }));
+  }
+  async setDataState(state, restore) {
+    this.kv.set('sync:data', structuredClone(state));
+    if (restore && this.kv.get('sync:restore') && this.kv.get('sync:restore').at === restore.at) this.kv.delete('sync:restore');
+  }
 }

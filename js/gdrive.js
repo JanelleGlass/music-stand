@@ -112,6 +112,34 @@ export async function updateFile(token, id, metadata, fields = FILE_FIELDS, para
   return res.json();
 }
 
+// A small file sent in one request: its details and its content together.
+function multipart(metadata, text, type) {
+  const boundary = `ms${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: ${type}\r\n\r\n${text}\r\n--${boundary}--`;
+  return { body, headers: { 'Content-Type': `multipart/related; boundary=${boundary}` } };
+}
+
+// A new small file with text content (notes, folders).
+export async function createTextFile(token, metadata, text, type = 'application/json') {
+  const { body, headers } = multipart({ ...metadata, mimeType: type }, text, type);
+  const res = await request(token, `${UPLOAD_API}/files?uploadType=multipart&fields=${encodeURIComponent(FILE_FIELDS)}`, { method: 'POST', headers, body });
+  return res.json();
+}
+
+// New text content for a file, and optionally new details (name, appProperties).
+export async function updateTextFile(token, id, text, metadata = {}, type = 'application/json') {
+  const { body, headers } = multipart(metadata, text, type);
+  const res = await request(token, `${UPLOAD_API}/files/${encodeURIComponent(id)}?uploadType=multipart&fields=${encodeURIComponent(FILE_FIELDS)}`, { method: 'PATCH', headers, body });
+  return res.json();
+}
+
+// A file's content as text.
+export async function downloadText(token, id) {
+  const res = await request(token, `${API}/files/${encodeURIComponent(id)}?alt=media`);
+  return res.text();
+}
+
 // A file's whole content.
 export async function download(token, id) {
   const res = await request(token, `${API}/files/${encodeURIComponent(id)}?alt=media`);
@@ -129,6 +157,22 @@ export async function startUpload(token, metadata, size, type = 'application/oct
       'X-Upload-Content-Length': String(size),
     },
     body: JSON.stringify(metadata),
+  });
+  const session = res.headers.get('Location');
+  if (!session) throw new DriveError(0, 'Google Drive didn’t say where to upload (Location header not readable).');
+  return session;
+}
+
+// The same for new content of an existing file.
+export async function startUpdateUpload(token, id, size, type = 'application/octet-stream') {
+  const res = await request(token, `${UPLOAD_API}/files/${encodeURIComponent(id)}?uploadType=resumable&fields=${encodeURIComponent(FILE_FIELDS)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': type,
+      'X-Upload-Content-Length': String(size),
+    },
+    body: '{}',
   });
   const session = res.headers.get('Location');
   if (!session) throw new DriveError(0, 'Google Drive didn’t say where to upload (Location header not readable).');
