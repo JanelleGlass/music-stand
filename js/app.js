@@ -1,6 +1,7 @@
 import { loadSettings, getSettings, updateSettings, onSettings, onLibraryChange, getFile, touchFile, requestPersistence } from './data.js';
 import { initLibrary } from './library.js';
 import { Viewer } from './viewer.js';
+import { Scrubber } from './scrubber.js';
 import { WinkCamera } from './wink-camera.js';
 import { initSettings } from './settings-ui.js';
 import { initNotesUi } from './notes-ui.js';
@@ -21,6 +22,7 @@ let library;
 let settingsUi;
 let sync;
 let notesUi;
+let scrubber = null;
 let viewerActive = false;
 let settingsOpen = false;
 let importing = false; // a backup is being imported
@@ -150,6 +152,7 @@ function applyTurnMode() {
   b.innerHTML = icon(paged ? 'one-page' : 'scroll');
   b.setAttribute('aria-pressed', String(paged));
   b.title = paged ? 'One page at a time' : 'Scrolling';
+  if (scrubber) scrubber.update();
 }
 
 function turn(dir, source) {
@@ -217,6 +220,8 @@ function setupViewerControls() {
     $('#v-page').textContent = label;
     $('#v-pill').textContent = label;
   });
+  // The scroll bar keeps the top bar up while it's held.
+  scrubber = new Scrubber($('#v-scrub'), viewer, { onStart: () => showBar(false), onEnd: () => showBar() });
   viewer.addEventListener('zoom', updateZoomLabel);
   viewer.addEventListener('tap', (e) => {
     // With the markings tools open, fingers only scroll.

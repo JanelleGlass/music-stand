@@ -254,6 +254,33 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 }
 #viewer.bar-visible .pagepill { opacity: 0; }
 
+/* The scroll bar (js/scrubber.js): with the top bar, while scrolling by hand, and while held. */
+.scrub {
+  position: absolute; z-index: 7; width: 44px;
+  right: env(safe-area-inset-right); top: calc(env(safe-area-inset-top) + 66px); bottom: calc(env(safe-area-inset-bottom) + 52px);
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s;
+}
+.scrub::before {
+  content: ""; position: absolute; right: 9px; top: 0; bottom: 0; width: 4px; border-radius: 2px;
+  background: rgba(20, 22, 26, 0.35);
+}
+#viewer.bar-visible .scrub, .scrub.show, .scrub.dragging { opacity: 1; pointer-events: auto; }
+.scrub.none, .vbar.marking ~ .scrub { display: none; }
+.scrub-handle {
+  position: absolute; right: 4px; top: 0; width: 14px; height: 56px; border-radius: 7px;
+  background: rgba(20, 22, 26, 0.75); border: 1.5px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); will-change: transform;
+}
+.scrub.dragging .scrub-handle { background: var(--accent); border-color: var(--accent); }
+.scrub-label {
+  position: absolute; right: 26px; top: 50%; transform: translateY(-50%);
+  padding: 6px 12px; border-radius: 14px; white-space: nowrap;
+  background: rgba(20, 22, 26, 0.88); color: #f1efea; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums;
+  opacity: 0; pointer-events: none;
+}
+.scrub.dragging .scrub-label { opacity: 1; }
+
 .wink-hud {
   position: absolute; left: max(12px, env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 5;
   width: 40px; height: 40px; border-radius: 50%; background: rgba(20, 22, 26, 0.6); color: #ddd;

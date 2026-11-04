@@ -15,6 +15,7 @@ import { getFile, getFileBlob, getPosition, savePosition, getSettings } from './
 import { Ink } from './ink.js';
 import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes } from './paging.js';
 import { Flip } from './flip.js';
+import { fractionOf, scrollFor } from './scrub.js';
 
 const GAP = 10;                 // px between pages
 const PAD = 8;                  // px above the first and below the last page
@@ -219,6 +220,29 @@ export class Viewer extends EventTarget {
   // The page in the middle of the screen.
   indexAtCenter() {
     return this.#indexAt(this.scroller.scrollTop + this.scroller.clientHeight / 2);
+  }
+
+  // How far through the music the screen is, 0 to 1 (the scroll bar).
+  get fraction() {
+    const sc = this.scroller;
+    return fractionOf(sc.scrollTop, sc.scrollHeight - sc.clientHeight);
+  }
+
+  // Jumps to fraction f of the way through the music (the scroll bar). One
+  // page at a time, it lands on a page.
+  jumpTo(f) {
+    if (!this.pages.length) return;
+    this.finishAnimation();
+    const sc = this.scroller;
+    sc.scrollTop = scrollFor(f, sc.scrollHeight - sc.clientHeight, this.paged ? this.slot : 0);
+  }
+
+  // The page being read: the one showing one page at a time; scrolling, the
+  // one a third of the way down the screen.
+  pageShowing() {
+    if (!this.pages.length) return -1;
+    const top = this.scroller.scrollTop;
+    return this.paged ? pageAt(top, this.slot, this.pages.length) : this.#indexAt(top + this.scroller.clientHeight * 0.33);
   }
 
   // Whether some of page index is on the screen.
@@ -545,7 +569,7 @@ export class Viewer extends EventTarget {
       else if (p.ink) this.ink.hide(p);
     }
 
-    const cur = this.paged ? pageAt(top, this.slot, this.pages.length) : this.#indexAt(top + vh * 0.33);
+    const cur = this.pageShowing();
     if (cur !== this.currentIndex) {
       this.currentIndex = cur;
       const p = this.pages[cur];

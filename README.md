@@ -72,6 +72,18 @@ icon shows which one is on), and the score stays on the page you're reading.
   either side. Zoom is for scrolling, so its buttons hide in this mode.
 - With *Write with a finger* on, a two-finger swipe turns the page.
 
+## Scroll bar
+
+A scroll bar runs down the right edge of a score for getting around long
+scores quickly. It appears with the top bar (tap the middle of the page) and
+while you scroll by hand, and stays out of the way otherwise.
+
+- Drag its handle: a label beside it shows the page you'll land on, and the
+  music follows your finger. Tap anywhere on the track to jump there.
+- One page at a time, it moves whole pages, without the page-turn animation.
+- It hides while the markings tools are open (so you can write near the
+  right edge), and when the whole score fits on the screen.
+
 ## Markings, favorites and folders (Phase 2)
 
 - **Write on the music with the Apple Pencil** whenever a score is open:
@@ -234,6 +246,7 @@ index.html, css/app.css      UI
 js/app.js                    startup, routing, wink → page turn, keys, wake lock
 js/viewer.js                 PDF viewer: scrolling or one page at a time (lazy rendering, animated turns, swipes)
 js/paging.js                 one page at a time: page fitting, swipes, how far a page has turned (unit tested)
+js/scrubber.js, js/scrub.js  the scroll bar down the right edge (its arithmetic is unit tested)
 js/flip.js                   a page turning like a book's, drawn over the music
 js/library.js                library screen, favorites and folders bar
 js/lists.js                  favorites and folders (data)
