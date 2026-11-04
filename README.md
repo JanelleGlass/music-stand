@@ -84,7 +84,7 @@ while you scroll by hand, and stays out of the way otherwise.
 - It hides while the markings tools are open (so you can write near the
   right edge), and when the whole score fits on the screen.
 
-## Adjusting pages: crop and turn
+## Adjusting pages: crop, turn and straighten
 
 The **crop button** in a score's top bar opens *Adjust pages* for the page
 you're on. It shows the whole page with an orange frame round the part that
@@ -92,6 +92,11 @@ will show.
 
 - Drag the frame's edges or corners to crop, or drag inside it to move it.
 - **Turn left / Turn right** for a page scanned sideways or upside down.
+- **Straighten** levels a crooked scan: drag the slider (−10° to +10°) and
+  line the staff lines up with the blue guide lines that show while it
+  moves. **Auto** finds the angle from the staff lines. Tap the angle to set
+  it back to 0. The corners that turn off the page are cut off, and markings
+  turn with the music.
 - **Trim margins** finds the music on the page and crops to it, keeping a
   little paper round it. It ignores the edge of a scan and a dark scanner
   shadow along the edge, but check a page with faint marks (page numbers,
@@ -106,8 +111,9 @@ will show.
 - ‹ › (or the arrow keys) go through the pages; each keeps what you did to it.
 - **Apply to** *This page*, *All*, *Odd* or *Even* (by the page's number in
   the PDF) says which pages Done changes. After Trim margins, each of those
-  pages is trimmed to its own music; otherwise they all get this page's crop
-  and turn.
+  pages is trimmed to its own music, and after Auto, each is straightened by
+  its own amount; otherwise they all get this page's crop, turn and
+  straightening. (Moving the slider after Auto uses that angle on them all.)
 - **Done** saves; **Cancel** leaves the pages as they were.
 
 A cropped page is laid out larger, as if its margins weren't there, in both
@@ -175,12 +181,17 @@ account:
 - If many scores disappear from Drive at once (for example the Music Stand
   folder went to the trash), nothing is deleted on the iPad until you choose,
   from the **Review** strip, to keep them or delete them.
-- **Markings, favorites and folders** sync too, in one small file in the
+- **Markings, page adjustments, zoom, favorites and folders** sync too, in one small file in the
   Music Stand folder ("Music Stand notes and folders.json"; leave it as it
   is). A score is recognised by its PDF, so markings and folders come back if
   a deleted score is restored from the Drive trash. Strokes written on two
   devices at once are all kept; an erased stroke is erased everywhere; for
   folder names and contents the latest change wins.
+- **Zoom** (the − / + in a score's top bar) syncs too: each score opens at
+  the zoom you last chose for it on any device. Zoom is a share of the
+  screen's width, so it looks the same on iPads of different sizes.
+  Changes arrive the next time sync runs; tap the cloud button or **Sync
+  now** to send or fetch them straight away (sync waits while a score is open).
 - Reading positions and settings stay per device.
 - The app can only see files it made itself, so add music with **Add PDF**:
   PDFs dropped into the folder from a computer don't show up.
@@ -284,7 +295,7 @@ js/app.js                    startup, routing, wink → page turn, keys, wake lo
 js/viewer.js                 PDF viewer: scrolling or one page at a time (lazy rendering, animated turns, swipes)
 js/paging.js                 one page at a time: page fitting, swipes, how far a page has turned (unit tested)
 js/scrubber.js, js/scrub.js  the scroll bar down the right edge (its arithmetic is unit tested)
-js/page-view.js              page adjustments: crop and turn geometry, finding the music to trim (unit tested)
+js/page-view.js              page adjustments: crop, turn and straighten geometry, finding the music and the staff lines' angle (unit tested)
 js/adjust-ui.js              the Adjust pages screen
 js/views-store.js            saving page adjustments, with the page's markings
 js/flip.js                   a page turning like a book's, drawn over the music

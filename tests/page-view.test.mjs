@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normRot, normCrop, normView, isPlain, mergeView, turnPoint, turnRect, shownBox, pageToShown, shownToPage,
-  musicBounds, luminance, pagesFor, withShape, MIN_CROP,
+  musicBounds, luminance, pagesFor, withShape, MIN_CROP, normTilt, findTilt, compose, turnAbout,
 } from '../js/page-view.js';
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -192,4 +192,67 @@ test('a frame never gets smaller than a frame can be', () => {
   const r = withShape([0.5, 0.5, MIN_CROP, MIN_CROP], 4);
   assert.ok(r[2] >= MIN_CROP - 1e-9 && r[3] >= MIN_CROP - 1e-9);
   near(ratio(r), 4);
+});
+
+test('tilt is kept within range, in small steps', () => {
+  assert.equal(normTilt(1.234), 1.25);
+  assert.equal(normTilt(-30), -10);
+  assert.equal(normTilt('x'), 0);
+  assert.equal(Object.is(normTilt(-0.01), 0), true);
+  assert.deepEqual(normView({ rot: 0, tilt: 2, crop: null, at: 1 }), { rot: 0, crop: null, at: 1, tilt: 2 });
+  assert.equal('tilt' in normView({ rot: 0, tilt: 0, crop: null, at: 1 }), false);
+  assert.ok(!isPlain({ rot: 0, tilt: 0.5, crop: null }));
+  assert.ok(isPlain({ rot: 0, tilt: 0, crop: null }));
+});
+
+test('turnAbout keeps its middle, and turns clockwise with y down', () => {
+  const m = turnAbout(90, 10, 20);
+  const at = (u, v) => [m[0] * u + m[2] * v + m[4], m[1] * u + m[3] * v + m[5]];
+  nearAll(at(10, 20), [10, 20]);
+  nearAll(at(20, 20), [10, 30]); // right of the middle goes below it
+  const back = compose(turnAbout(-90, 10, 20), m);
+  nearAll(back, [1, 0, 0, 1, 0, 0]);
+});
+
+test('straightened pages: points land where they show, and come back', () => {
+  const W = 600;
+  const H = 800;
+  for (const rot of [0, 90, 180, 270]) {
+    for (const crop of [null, [0.1, 0.2, 0.6, 0.5]]) {
+      const view = { rot, tilt: 3.5, crop };
+      const m = pageToShown(view, W, H);
+      for (const [u, v] of [[100, 300], [450, 700], [300, 400]]) {
+        const x = m[0] * u + m[2] * v + m[4];
+        const y = m[1] * u + m[3] * v + m[5];
+        nearAll(shownToPage(view, W, H, x, y), [u, v], 1e-6);
+      }
+      // The middle of the page stays where it was.
+      const flat = pageToShown({ rot, crop }, W, H);
+      nearAll([m[0] * 300 + m[2] * 400 + m[4], m[1] * 300 + m[3] * 400 + m[5]], [flat[0] * 300 + flat[2] * 400 + flat[4], flat[1] * 300 + flat[3] * 400 + flat[5]], 1e-6);
+    }
+  }
+});
+
+// Five staff lines, each going down by slope px per px across.
+function crooked(w, h, deg) {
+  const lum = new Uint8Array(w * h).fill(255);
+  const slope = Math.tan((deg * Math.PI) / 180);
+  for (const y0 of [100, 112, 124, 136, 148, 300, 312, 324, 336, 348]) {
+    for (let x = 40; x < w - 40; x++) {
+      const y = Math.round(y0 + (x - w / 2) * slope);
+      if (y >= 0 && y < h) lum[y * w + x] = 0;
+    }
+  }
+  return lum;
+}
+
+test('findTilt levels crooked staff lines', () => {
+  // Lines going down to the right (turned clockwise) need turning back.
+  near(findTilt(crooked(500, 450, 2), 500, 450), -2, 0.11);
+  near(findTilt(crooked(500, 450, -3.5), 500, 450), 3.5, 0.11);
+  near(findTilt(crooked(500, 450, 0), 500, 450), 0, 0.06);
+});
+
+test('findTilt on a blank page is 0', () => {
+  assert.equal(findTilt(new Uint8Array(100 * 100).fill(255), 100, 100), 0);
 });

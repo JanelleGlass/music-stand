@@ -1,11 +1,14 @@
 // Page adjustments: how a page is shown, cropped and turned. No DOM, unit
 // tested (tests/page-view.test.mjs).
 //
-// A page's view is { rot, crop, at }:
+// A page's view is { rot, tilt, crop, at }:
 //   rot   0, 90, 180 or 270: degrees the page is turned clockwise.
+//   tilt  degrees (-MAX_TILT to MAX_TILT) the music is turned clockwise
+//         about the middle of the page, to straighten a crooked scan. The
+//         page keeps its size: the corners that turn off it are cut off.
 //   crop  null (the whole page) or [x, y, w, h], the part shown, as fractions
-//         of the page as it is in the PDF (before rot), so turning a cropped
-//         page keeps the same music.
+//         of the page straightened but not turned (before rot), so turning a
+//         cropped page keeps the same music.
 //   at    when it was set (ms); between devices the newer setting wins.
 //
 // Markings stay in the page's own units (js/ink-draw.js), so they keep their
@@ -14,6 +17,7 @@
 
 export const ROTATIONS = [0, 90, 180, 270];
 export const MIN_CROP = 0.1; // a crop keeps at least this much of each side
+export const MAX_TILT = 10; // degrees a page can be straightened either way
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const r4 = (n) => Math.round(n * 10000) / 10000;
@@ -37,15 +41,24 @@ export function normCrop(c) {
   return out;
 }
 
+// Tilt in steps of 0.05°, within MAX_TILT.
+export function normTilt(t) {
+  const n = Math.round(clamp(Number(t) || 0, -MAX_TILT, MAX_TILT) * 20) / 20;
+  return n === 0 ? 0 : n; // not -0
+}
+
 // A stored view, cleaned up; null if there is none.
 export function normView(v) {
   if (!v || typeof v !== 'object') return null;
-  return { rot: normRot(v.rot || 0), crop: normCrop(v.crop), at: Number(v.at) || 0 };
+  const out = { rot: normRot(v.rot || 0), crop: normCrop(v.crop), at: Number(v.at) || 0 };
+  const tilt = normTilt(v.tilt);
+  if (tilt) out.tilt = tilt; // left out when level, as before there was tilt
+  return out;
 }
 
 // Whether a view shows the page just as it is.
 export function isPlain(v) {
-  return !v || (!v.rot && !v.crop);
+  return !v || (!v.rot && !v.crop && !normTilt(v.tilt));
 }
 
 // Two copies of a page's view (two devices): the newer wins; on a tie, the
@@ -96,23 +109,45 @@ export function shownBox(view, W, H) {
   return { x: x * TW, y: y * TH, w: w * TW, h: h * TH };
 }
 
-// The matrix [a, b, c, d, e, f] taking page point (u, v) to display point
-// (a·u + c·v + e, b·u + d·v + f), all in PDF units (as CSS's matrix()).
+// Matrices [a, b, c, d, e, f] take point (u, v) to (a·u + c·v + e,
+// b·u + d·v + f), as CSS's matrix() and canvas's transform() do.
+
+// m then n: the matrix doing m first, then n.
+export function compose(n, m) {
+  return [
+    n[0] * m[0] + n[2] * m[1], n[1] * m[0] + n[3] * m[1],
+    n[0] * m[2] + n[2] * m[3], n[1] * m[2] + n[3] * m[3],
+    n[0] * m[4] + n[2] * m[5] + n[4], n[1] * m[4] + n[3] * m[5] + n[5],
+  ];
+}
+
+// Turning by deg clockwise (y pointing down) about (cx, cy).
+export function turnAbout(deg, cx, cy) {
+  const r = (deg * Math.PI) / 180;
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  return [c, s, -s, c, cx - c * cx + s * cy, cy - s * cx - c * cy];
+}
+
+// Page point (u, v) to display point: straightened, turned and cropped, all
+// in PDF units.
 export function pageToShown(view, W, H) {
   const rot = view ? normRot(view.rot) : 0;
   const box = shownBox(view, W, H);
   const [e, f] = turnPoint(rot, W, H, 0, 0);
   const lin = { 0: [1, 0, 0, 1], 90: [0, 1, -1, 0], 180: [-1, 0, 0, -1], 270: [0, -1, 1, 0] }[rot];
-  return [...lin, e - box.x, f - box.y];
+  const shown = [...lin, e - box.x, f - box.y];
+  const tilt = view ? normTilt(view.tilt) : 0;
+  return tilt ? compose(shown, turnAbout(tilt, W / 2, H / 2)) : shown;
 }
 
 // The page point under display point (x, y) (PDF units).
 export function shownToPage(view, W, H, x, y) {
   const [a, b, c, d, e, f] = pageToShown(view, W, H);
-  // The turn is a rotation, so its inverse is its transpose.
+  const det = a * d - b * c;
   const dx = x - e;
   const dy = y - f;
-  return [a * dx + b * dy, c * dx + d * dy];
+  return [(d * dx - c * dy) / det, (a * dy - b * dx) / det];
 }
 
 // ---- Keeping the frame's shape ----
@@ -209,6 +244,51 @@ export function musicBounds(lum, w, h, { dark = 190, pad = 0.02, edge = 0.01, sh
   const y0 = Math.max(0, ys[0] / h - pad);
   const y1 = Math.min(1, ys[1] / h + pad);
   return normCrop([x0, y0, x1 - x0, y1 - y0]);
+}
+
+// ---- Straightening ----
+
+// The tilt (degrees, as in a view) that makes the staff lines of a page level,
+// from its pixels (as musicBounds). Tries angles, turning the dark pixels
+// and counting them row by row: level staff lines pile up in a few rows.
+// 0 if nothing is found.
+export function findTilt(lum, w, h, { dark = 160, range = 6 } = {}) {
+  const xs = [];
+  const ys = [];
+  const step = Math.max(1, Math.round(Math.sqrt((w * h) / 250000))); // about 250,000 pixels looked at
+  for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) {
+    if (lum[y * w + x] < dark) {
+      xs.push(x - w / 2);
+      ys.push(y - h / 2);
+    }
+  }
+  if (xs.length < 50) return 0;
+  const rows = new Float64Array(Math.ceil(Math.hypot(w, h)) + 2);
+  const off = rows.length / 2;
+  const score = (deg) => {
+    const r = (deg * Math.PI) / 180;
+    const s = Math.sin(r);
+    const c = Math.cos(r);
+    rows.fill(0);
+    for (let i = 0; i < xs.length; i++) rows[Math.floor(s * xs[i] + c * ys[i] + off)]++;
+    let sum = 0;
+    for (let i = 0; i < rows.length; i++) sum += rows[i] * rows[i];
+    return sum;
+  };
+  const best = (from, to, by) => {
+    let at = 0;
+    let top = -1;
+    for (let d = from; d <= to + 1e-9; d += by) {
+      const v = score(d);
+      if (v > top + 1e-9 || (Math.abs(v - top) <= 1e-9 && Math.abs(d) < Math.abs(at))) {
+        top = v;
+        at = d;
+      }
+    }
+    return at;
+  };
+  const coarse = best(-range, range, 0.5);
+  return normTilt(best(coarse - 0.5, coarse + 0.5, 0.05));
 }
 
 // Luminance from RGBA pixels (a canvas's ImageData).

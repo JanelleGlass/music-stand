@@ -11,12 +11,12 @@
 // the pages turn over it like a book's (js/flip.js). A sideways drag turns
 // the page under the finger.
 import { openPdf, isCancel } from './pdfdoc.js';
-import { getFile, getFileBlob, getPosition, savePosition, getSettings } from './data.js';
+import { getFile, getFileBlob, getPosition, savePosition, getSettings, libraryEdited } from './data.js';
 import { Ink } from './ink.js';
 import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes } from './paging.js';
 import { Flip } from './flip.js';
 import { fractionOf, scrollFor } from './scrub.js';
-import { shownBox, pageToShown, isPlain, normView } from './page-view.js';
+import { shownBox, pageToShown, isPlain, normView, turnAbout } from './page-view.js';
 import { loadViews } from './views-store.js';
 import { placeLayer } from './ink-draw.js';
 
@@ -119,6 +119,8 @@ export class Viewer extends EventTarget {
     this.key = key;
     this.pages = pages;
     this.zoom = pos && pos.zoom ? pos.zoom : 1;
+    this.zoomAt = (pos && pos.zoomAt) || 0; // when the zoom was set (synced: js/sync-data.js)
+    this.savedZoomAt = this.zoomAt;
     const frag = document.createDocumentFragment();
     pages.forEach((p, i) => {
       const el = document.createElement('div');
@@ -174,9 +176,10 @@ export class Viewer extends EventTarget {
     this.#updateVisible();
   }
 
-  // The whole of page index, turned rot, drawn to fit maxW × maxH CSS px
-  // (for adjusting it). Resolves to a canvas whose pixels are scale × that.
-  async paperImage(index, rot, maxW, maxH, scale = 1) {
+  // The whole of page index, turned rot (and straightened tilt degrees),
+  // drawn to fit maxW × maxH CSS px (for adjusting it). Resolves to a canvas
+  // whose pixels are scale × that.
+  async paperImage(index, rot, maxW, maxH, scale = 1, tilt = 0) {
     const p = this.pages[index];
     const doc = await this.#doc(p.fileId);
     const page = await doc.getPage(p.num);
@@ -189,7 +192,8 @@ export class Viewer extends EventTarget {
     const ctx = c.getContext('2d', { alpha: false, willReadFrequently: scale < 1 });
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, c.width, c.height);
-    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    const transform = tilt ? turnAbout(tilt, c.width / 2, c.height / 2) : null;
+    await page.render({ canvasContext: ctx, viewport: vp, transform }).promise;
     page.cleanup();
     return c;
   }
@@ -481,6 +485,7 @@ export class Viewer extends EventTarget {
     this.ink.commit();
     const [idx, frac] = this.#topPosition();
     this.zoom = z;
+    this.zoomAt = Date.now();
     this.#layout();
     this.#restore(idx, frac);
     this.#updateVisible();
@@ -705,7 +710,15 @@ export class Viewer extends EventTarget {
     c.width = Math.max(1, Math.floor(box.w * scale));
     c.height = Math.max(1, Math.floor(box.h * scale));
     try {
-      p.task = page.render({ canvasContext: c.getContext('2d', { alpha: false }), viewport: vp });
+      // Straightened: turned about the middle of the page, where it is drawn.
+      let transform = null;
+      if (p.view && p.view.tilt) {
+        const flat = pageToShown({ rot, crop: p.view.crop }, p.pw, p.ph);
+        const cx = (flat[0] * p.pw / 2 + flat[2] * p.ph / 2 + flat[4]) * scale;
+        const cy = (flat[1] * p.pw / 2 + flat[3] * p.ph / 2 + flat[5]) * scale;
+        transform = turnAbout(p.view.tilt, cx, cy);
+      }
+      p.task = page.render({ canvasContext: c.getContext('2d', { alpha: false }), viewport: vp, transform });
       await p.task.promise;
     } catch (e) {
       freeCanvas(c);
@@ -846,7 +859,11 @@ export class Viewer extends EventTarget {
     clearTimeout(this.saveTimer);
     if (!this.pages.length || !this.key) return;
     const [page, frac] = this.#topPosition();
-    savePosition({ id: this.key, page, frac: Math.round(frac * 10000) / 10000, zoom: this.zoom }).catch(() => {});
+    const zoomChanged = this.zoomAt !== this.savedZoomAt;
+    this.savedZoomAt = this.zoomAt;
+    savePosition({ id: this.key, page, frac: Math.round(frac * 10000) / 10000, zoom: this.zoom, zoomAt: this.zoomAt })
+      .then(() => { if (zoomChanged) libraryEdited(); }) // sync sends the new zoom on
+      .catch(() => {});
   }
 
   flushPosition() {
