@@ -175,12 +175,17 @@ account:
 - If many scores disappear from Drive at once (for example the Music Stand
   folder went to the trash), nothing is deleted on the iPad until you choose,
   from the **Review** strip, to keep them or delete them.
-- **Markings, favorites and folders** sync too, in one small file in the
+- **Markings, page adjustments, zoom, favorites and folders** sync too, in one small file in the
   Music Stand folder ("Music Stand notes and folders.json"; leave it as it
   is). A score is recognised by its PDF, so markings and folders come back if
   a deleted score is restored from the Drive trash. Strokes written on two
   devices at once are all kept; an erased stroke is erased everywhere; for
   folder names and contents the latest change wins.
+- **Zoom** (the − / + in a score's top bar) syncs too: each score opens at
+  the zoom you last chose for it on any device. Zoom is a share of the
+  screen's width, so it looks the same on iPads of different sizes.
+  Changes arrive the next time sync runs; tap the cloud button or **Sync
+  now** to send or fetch them straight away (sync waits while a score is open).
 - Reading positions and settings stay per device.
 - The app can only see files it made itself, so add music with **Add PDF**:
   PDFs dropped into the folder from a computer don't show up.

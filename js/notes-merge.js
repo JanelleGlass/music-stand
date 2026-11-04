@@ -45,6 +45,37 @@ export function mergeNotes(a, b) {
   return { pages };
 }
 
+// ---- Zoom ----
+//
+// A score's zoom (scrolling: the share of the screen's width a page takes):
+// { zoom, at }. The newer setting wins; on a tie, the larger zoom.
+
+export function normZoom(z) {
+  if (!z || typeof z !== 'object') return null;
+  const zoom = Number(z.zoom);
+  const at = Number(z.at) || 0;
+  if (!Number.isFinite(zoom) || !at) return null;
+  return { zoom: Math.round(Math.max(0.3, Math.min(1, zoom)) * 1000) / 1000, at };
+}
+
+export function mergeZoom(a, b) {
+  a = normZoom(a);
+  b = normZoom(b);
+  if (!a || !b) return a || b;
+  if (a.at !== b.at) return a.at > b.at ? a : b;
+  return a.zoom >= b.zoom ? a : b;
+}
+
+// Zooms by score: { <score>: { zoom, at } }.
+export function mergeZooms(a = {}, b = {}) {
+  const out = {};
+  for (const k of [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].sort()) {
+    const z = mergeZoom((a || {})[k], (b || {})[k]);
+    if (z) out[k] = z;
+  }
+  return out;
+}
+
 // ---- Folders ----
 //
 // A folder: { id, name, nameAt, createdAt, deleted, deletedAt,

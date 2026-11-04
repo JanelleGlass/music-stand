@@ -364,3 +364,37 @@ test('page adjustments travel, and the newer one wins', async () => {
   await sync(drive, b);
   assert.deepEqual(b.view(id, 2), { rot: 0, crop: null });
 });
+
+test('a score\u2019s zoom travels, and the newer one wins', async () => {
+  const { drive, devices: [a, b] } = setup('A', 'B');
+  const ida = a.add('Grace', 'g');
+  await sync(drive, a);
+  await sync(drive, b);
+  const idb = [...b.files.keys()][0];
+  a.setZoom(ida, 0.7);
+  await sync(drive, a);
+  const r = await sync(drive, b);
+  assert.equal(r.zooms, 1);
+  assert.equal(b.zoomOf(idb), 0.7);
+  // B changes it later than A does.
+  a.setZoom(ida, 0.9);
+  b.setZoom(idb, 0.6);
+  await sync(drive, a);
+  await sync(drive, b);
+  await sync(drive, a);
+  assert.equal(a.zoomOf(ida), 0.6);
+  assert.equal(b.zoomOf(idb), 0.6);
+  // Nothing new: nothing sent.
+  assert.equal((await sync(drive, a)).zooms, 0);
+});
+
+test('a zoom change alone counts as waiting to sync', async () => {
+  const { drive, devices: [a] } = setup('A');
+  const id = a.add('Grace', 'g');
+  await sync(drive, a);
+  assert.equal(await dataPending(a), false);
+  a.setZoom(id, 0.8);
+  assert.equal(await dataPending(a), true);
+  await sync(drive, a);
+  assert.equal(await dataPending(a), false);
+});

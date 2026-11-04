@@ -182,6 +182,7 @@ export function initSync({ canSync, canReload, canLeave, confirmSwitch }) {
     if (r.deleted) parts.push(`${r.deleted} deleted here`);
     if (r.trashed) parts.push(`${r.trashed} moved to the Drive trash`);
     if (r.notes) parts.push(`markings for ${r.notes} ${r.notes === 1 ? 'score' : 'scores'}`);
+    if (r.zooms) parts.push(`zoom for ${r.zooms} ${r.zooms === 1 ? 'score' : 'scores'}`);
     if (r.folders) parts.push(`${r.folders} ${r.folders === 1 ? 'folder' : 'folders'} updated`);
     if (r.failed) parts.push(`${r.failed} failed`);
     return parts.join(', ') || 'nothing to change';

@@ -78,6 +78,17 @@ export class FakeDevice {
     this.#notesPage(id, page, { strokes: [], erased: [strokeId] });
   }
 
+  // Zooms a score (scrolling), as the viewer does.
+  setZoom(id, zoom) {
+    const p = this.positions.get(id) || { id, page: 0, frac: 0 };
+    this.positions.set(id, { ...p, zoom, zoomAt: this.now() });
+  }
+
+  zoomOf(id) {
+    const p = this.positions.get(id);
+    return p ? p.zoom : undefined;
+  }
+
   // Crops and turns a page (js/page-view.js).
   adjust(id, page, rot, crop = null) {
     this.#notesPage(id, page, { strokes: [], erased: [], view: { rot, crop, at: this.now() } });
@@ -234,7 +245,14 @@ export class FakeDevice {
 
   async notesRecords() { return [...this.annotations.values()].map((r) => structuredClone(r)); }
   async folders() { return [...this.lists.values()].map((f) => structuredClone(f)); }
-  async applyData({ notes, lists }) {
+  async places() { return [...this.positions.values()].map((p) => structuredClone(p)); }
+  async applyData({ notes, lists, zooms = [] }) {
+    for (const z of zooms) {
+      if (!this.files.has(z.fileId)) continue;
+      const p = this.positions.get(z.fileId);
+      if (p && p.zoomAt >= z.at) continue;
+      this.positions.set(z.fileId, { ...(p || { id: z.fileId, page: 0, frac: 0 }), zoom: z.zoom, zoomAt: z.at });
+    }
     this.#maybeFail('applyData');
     for (const { fileId, page, data } of notes) {
       if (!this.files.has(fileId)) continue;

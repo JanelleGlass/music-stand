@@ -125,13 +125,14 @@ export const localStore = {
 
   notesRecords: () => db.getAll('annotations'),
   folders: () => db.getAll('lists'),
+  places: () => db.getAll('positions'),
 
   // Pages of markings and folders from Drive, combined with what is stored
   // (a save made meanwhile is kept).
   // Scores deleted meanwhile get nothing.
-  async applyData({ notes, lists }) {
+  async applyData({ notes, lists, zooms = [] }) {
     const at = Date.now();
-    await db.transact(['files', 'annotations', 'lists'], (s) => {
+    await db.transact(['files', 'annotations', 'lists', 'positions'], (s) => {
       const req = s.files.getAllKeys();
       req.onsuccess = () => {
         const here = new Set(req.result);
@@ -142,6 +143,16 @@ export const localStore = {
           r.onsuccess = () => {
             const merged = mergePage(r.result, data);
             if (!pageIsEmpty(merged)) s.annotations.put({ id: key, fileId, page, ...merged, updatedAt: at });
+          };
+        }
+        // A newer zoom; the reading place stays.
+        for (const z of zooms) {
+          if (!here.has(z.fileId)) continue;
+          const r = s.positions.get(z.fileId);
+          r.onsuccess = () => {
+            const p = r.result;
+            if (p && p.zoomAt >= z.at) return;
+            s.positions.put({ ...(p || { id: z.fileId, page: 0, frac: 0 }), zoom: z.zoom, zoomAt: z.at });
           };
         }
         for (const f of lists) {

@@ -11,7 +11,7 @@
 // the pages turn over it like a book's (js/flip.js). A sideways drag turns
 // the page under the finger.
 import { openPdf, isCancel } from './pdfdoc.js';
-import { getFile, getFileBlob, getPosition, savePosition, getSettings } from './data.js';
+import { getFile, getFileBlob, getPosition, savePosition, getSettings, libraryEdited } from './data.js';
 import { Ink } from './ink.js';
 import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes } from './paging.js';
 import { Flip } from './flip.js';
@@ -119,6 +119,8 @@ export class Viewer extends EventTarget {
     this.key = key;
     this.pages = pages;
     this.zoom = pos && pos.zoom ? pos.zoom : 1;
+    this.zoomAt = (pos && pos.zoomAt) || 0; // when the zoom was set (synced: js/sync-data.js)
+    this.savedZoomAt = this.zoomAt;
     const frag = document.createDocumentFragment();
     pages.forEach((p, i) => {
       const el = document.createElement('div');
@@ -481,6 +483,7 @@ export class Viewer extends EventTarget {
     this.ink.commit();
     const [idx, frac] = this.#topPosition();
     this.zoom = z;
+    this.zoomAt = Date.now();
     this.#layout();
     this.#restore(idx, frac);
     this.#updateVisible();
@@ -846,7 +849,11 @@ export class Viewer extends EventTarget {
     clearTimeout(this.saveTimer);
     if (!this.pages.length || !this.key) return;
     const [page, frac] = this.#topPosition();
-    savePosition({ id: this.key, page, frac: Math.round(frac * 10000) / 10000, zoom: this.zoom }).catch(() => {});
+    const zoomChanged = this.zoomAt !== this.savedZoomAt;
+    this.savedZoomAt = this.zoomAt;
+    savePosition({ id: this.key, page, frac: Math.round(frac * 10000) / 10000, zoom: this.zoom, zoomAt: this.zoomAt })
+      .then(() => { if (zoomChanged) libraryEdited(); }) // sync sends the new zoom on
+      .catch(() => {});
   }
 
   flushPosition() {
