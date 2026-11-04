@@ -8,6 +8,7 @@
 // viewer holds still: page turns wait and pages aren't redrawn.
 import { getSettings, onSettings } from './data.js';
 import { NotesStore, newStrokeId } from './notes-store.js';
+import { shownToPage } from './page-view.js';
 import { PAGE_W, PENS, HIGHLIGHTERS, makeLayers, removeLayers, liveLayer, strokeEl, drawAll, removeStrokeEl, pathData, strokesToErase, decimate, simplify } from './ink-draw.js';
 
 const ERASER_REACH = 7; // page units around the eraser tip
@@ -203,13 +204,16 @@ export class Ink extends EventTarget {
     return this.viewer.pages[+el.dataset.index] || null;
   }
 
-  // Pointer position in the page's units, kept on the page.
+  // Pointer position in the page's units, kept on the page. A cropped or
+  // turned page (js/page-view.js) is followed back to the page in the PDF.
   #point(page, x, y) {
     const r = page.el.getBoundingClientRect();
-    const k = PAGE_W / r.width;
+    const k = page.w / r.width; // PDF units per CSS px
+    const [u, v] = shownToPage(page.view, page.pw, page.ph, (x - r.left) * k, (y - r.top) * k);
+    const s = PAGE_W / page.pw;
     return [
-      Math.max(0, Math.min(PAGE_W, (x - r.left) * k)),
-      Math.max(0, Math.min((PAGE_W * page.h) / page.w, (y - r.top) * k)),
+      Math.max(0, Math.min(PAGE_W, u * s)),
+      Math.max(0, Math.min(PAGE_W * page.ph / page.pw, v * s)),
     ];
   }
 

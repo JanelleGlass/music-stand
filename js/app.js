@@ -2,6 +2,7 @@ import { loadSettings, getSettings, updateSettings, onSettings, onLibraryChange,
 import { initLibrary } from './library.js';
 import { Viewer } from './viewer.js';
 import { Scrubber } from './scrubber.js';
+import { AdjustUi } from './adjust-ui.js';
 import { WinkCamera } from './wink-camera.js';
 import { initSettings } from './settings-ui.js';
 import { initNotesUi } from './notes-ui.js';
@@ -23,6 +24,7 @@ let settingsUi;
 let sync;
 let notesUi;
 let scrubber = null;
+let adjustUi = null;
 let viewerActive = false;
 let settingsOpen = false;
 let importing = false; // a backup is being imported
@@ -157,8 +159,9 @@ function applyTurnMode() {
 
 function turn(dir, source) {
   if (!viewerActive) return;
-  // Not while the Pencil is writing: the mark would streak across the page.
-  if (viewer.ink.busy) return;
+  // Not while the Pencil is writing (the mark would streak across the page),
+  // nor while pages are being adjusted.
+  if (viewer.ink.busy || (adjustUi && adjustUi.isOpen)) return;
   const moved = viewer.turn(dir);
   if (moved) {
     hideBar();
@@ -195,6 +198,8 @@ function setupViewerControls() {
     toast(paged ? 'One page at a time' : 'Scrolling', 1400);
     showBar();
   });
+  adjustUi = new AdjustUi(viewer, { onOpenChange: (open) => (open ? showBar(false) : showBar()) });
+  $('#v-adjust').addEventListener('click', () => adjustUi.open());
   $('#v-zoom-in').addEventListener('click', () => { viewer.zoomStep(1); showBar(); });
   $('#v-zoom-out').addEventListener('click', () => { viewer.zoomStep(-1); showBar(); });
   $('#v-wink').addEventListener('click', () => {
@@ -252,6 +257,11 @@ function setupViewerControls() {
     if (!viewerActive || settingsOpen || document.querySelector('dialog[open]')) return;
     if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
     const k = e.key;
+    if (adjustUi.isOpen) {
+      if (k === 'Escape') adjustUi.close();
+      else if (k === 'ArrowLeft' || k === 'ArrowRight') adjustUi.step(k === 'ArrowLeft' ? -1 : 1);
+      return;
+    }
     let dir = 0;
     if (k === 'ArrowDown' || k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && !e.shiftKey) || k === 'Enter') dir = 1;
     else if (k === 'ArrowUp' || k === 'ArrowLeft' || k === 'PageUp' || (k === ' ' && e.shiftKey)) dir = -1;

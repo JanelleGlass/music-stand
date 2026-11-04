@@ -450,7 +450,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 .signin-note p { margin: 0; color: var(--muted); max-width: 26em; }
 
 /* ---------- Notes (Pencil) ---------- */
-.page svg.ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+/* Sized and placed by js/ink-draw.js (placeLayer): the whole page, cropped and turned as it shows. */
+.page svg.ink { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; pointer-events: none; overflow: visible; }
 .page svg.ink path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 /* Highlighter blends into the paper: multiply on white, screen on the night page. */
 .page svg.ink-hl { z-index: 1; mix-blend-mode: multiply; opacity: 0.45; }
@@ -463,7 +464,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 
 /* Markings tools take the place of the page, zoom and wink controls. */
 .vbar.marking > #v-page, .vbar.marking > .zoom, .vbar.marking > #v-wink, .vbar.marking > #v-settings,
-.vbar.marking > #v-star, .vbar.marking > #v-notes, .vbar.marking > #v-mode { display: none; }
+.vbar.marking > #v-star, .vbar.marking > #v-notes, .vbar.marking > #v-mode, .vbar.marking > #v-adjust { display: none; }
 .notes-tools { display: flex; align-items: center; gap: 2px; }
 .notes-tools .sep { width: 1px; height: 26px; margin: 0 4px; background: rgba(255, 255, 255, 0.18); }
 .notes-tools .icon-btn { position: relative; }
@@ -565,5 +566,53 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 }
 @media (max-width: 380px) {
   /* The page, wink and settings buttons stay on screen; the star is on the library cards too. */
-  .vbar:not(.marking) > #v-star, .vbar:not(.marking) #v-zoom, .vbar:not(.marking) > #v-mode { display: none; }
+  .vbar:not(.marking) > #v-star, .vbar:not(.marking) #v-zoom, .vbar:not(.marking) > #v-mode, .vbar:not(.marking) > #v-adjust { display: none; }
+}
+
+/* ---------- Adjust pages (js/adjust-ui.js) ---------- */
+.adjust {
+  position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column;
+  background: var(--stage); color: var(--bar-text);
+}
+.adjust-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 6px) max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
+  background: var(--bar);
+}
+.adjust-bar .btn:not(.primary) { background: rgba(255, 255, 255, 0.12); border-color: transparent; color: inherit; }
+.adjust-nav { display: flex; align-items: center; gap: 2px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.adjust-nav .icon-btn:disabled { opacity: 0.3; }
+.adjust-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.adjust-paper { position: relative; background: #fff; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.adjust-paper canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.adjust-crop {
+  position: absolute; cursor: move;
+  outline: 2px solid var(--accent); box-shadow: 0 0 0 9999px rgba(10, 12, 16, 0.6);
+}
+.adjust-crop i { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; }
+.adjust-crop i::after { content: ""; position: absolute; left: 50%; top: 50%; background: var(--accent); border-radius: 3px; box-shadow: 0 0 0 1.5px #fff; }
+.adjust-crop i[data-h="n"], .adjust-crop i[data-h="s"] { left: 50%; cursor: ns-resize; }
+.adjust-crop i[data-h="e"], .adjust-crop i[data-h="w"] { top: 50%; cursor: ew-resize; }
+.adjust-crop i[data-h="n"] { top: 0; } .adjust-crop i[data-h="s"] { top: 100%; }
+.adjust-crop i[data-h="w"] { left: 0; } .adjust-crop i[data-h="e"] { left: 100%; }
+.adjust-crop i[data-h="n"]::after, .adjust-crop i[data-h="s"]::after { width: 30px; height: 6px; margin: -3px 0 0 -15px; }
+.adjust-crop i[data-h="e"]::after, .adjust-crop i[data-h="w"]::after { width: 6px; height: 30px; margin: -15px 0 0 -3px; }
+.adjust-crop i[data-h="nw"] { left: 0; top: 0; cursor: nwse-resize; }
+.adjust-crop i[data-h="ne"] { left: 100%; top: 0; cursor: nesw-resize; }
+.adjust-crop i[data-h="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
+.adjust-crop i[data-h="se"] { left: 100%; top: 100%; cursor: nwse-resize; }
+.adjust-crop i[data-h$="w"]:not([data-h="w"])::after, .adjust-crop i[data-h$="e"]:not([data-h="e"])::after { width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; }
+.adjust-tools {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px max(12px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: var(--bg); color: var(--text);
+}
+.adjust-row { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.adjust-label { color: var(--muted); font-size: 15px; }
+.adjust-note { margin: 0; min-height: 1.4em; text-align: center; color: var(--muted); font-size: 14px; }
+.adjust.busy .adjust-note { color: var(--accent); }
+@media (max-width: 560px) {
+  .adjust-row .btn.small { padding: 0 9px; font-size: 14px; }
+  .adjust-row .btn .ico { display: none; }
+  .adjust-row .seg button { padding: 0 9px; }
 }

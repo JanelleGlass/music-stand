@@ -8,7 +8,7 @@
 // markings and folder members use the device's own score ids.
 //
 //   { app: 'music-stand', kind: 'data', v: 1,
-//     notes: { <hash>: { <page>: { strokes, erased } } },
+//     notes: { <hash>: { <page>: { strokes, erased, view? } } },
 //     folders: [{ id, name, nameAt, createdAt, deleted, deletedAt,
 //                 members: [{ score: <hash>, in, at }] }] }
 //
@@ -106,7 +106,7 @@ export function resurrect(local, remote, hashes) {
         while (gone.has(`${base}~r${k}`)) k++;
         return `${base}~r${k}`;
       };
-      notes[h][n] = mergePage({ strokes: page.strokes.map((s) => (gone.has(s.id) ? { ...s, id: revived(s.id) } : s)), erased: page.erased }, null);
+      notes[h][n] = mergePage({ strokes: page.strokes.map((s) => (gone.has(s.id) ? { ...s, id: revived(s.id) } : s)), erased: page.erased, view: page.view }, null);
     }
   }
   return { notes: sortedNotes(notes), folders: local.folders };
@@ -148,7 +148,7 @@ export function parse(text) {
     notes[h] = {};
     for (const [n, p] of Object.entries(pages)) {
       if (!/^\d+$/.test(n) || !p) continue;
-      notes[h][n] = mergePage({ strokes: (Array.isArray(p.strokes) ? p.strokes : []).filter(validStroke), erased: (Array.isArray(p.erased) ? p.erased : []).filter((id) => typeof id === 'string') }, null);
+      notes[h][n] = mergePage({ strokes: (Array.isArray(p.strokes) ? p.strokes : []).filter(validStroke), erased: (Array.isArray(p.erased) ? p.erased : []).filter((id) => typeof id === 'string'), view: p.view }, null);
     }
   }
   const folders = (Array.isArray(raw.folders) ? raw.folders : []).filter((f) => f && typeof f.id === 'string');

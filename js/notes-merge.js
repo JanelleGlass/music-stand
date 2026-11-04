@@ -1,6 +1,7 @@
 // Rules for combining two copies of a score's notes, or of a folder, made on
 // different devices (Google Drive sync, backup Merge). No DOM, IndexedDB or
 // network here, so they can be unit tested (tests/notes-merge.test.mjs).
+import { mergeView } from './page-view.js';
 //
 // Every rule is commutative, associative and idempotent: combining copies in
 // any order, any number of times, gives the same result, so devices agree
@@ -8,9 +9,11 @@
 
 // ---- Notes ----
 //
-// A page's notes: { strokes: [stroke], erased: [strokeId] }. A stroke never
-// changes once drawn: { id, at, tool, color, w, pts }. Erasing one keeps its
-// id in erased, so the erase reaches copies that still have the stroke.
+// A page's notes: { strokes: [stroke], erased: [strokeId], view? }. A stroke
+// never changes once drawn: { id, at, tool, color, w, pts }. Erasing one keeps
+// its id in erased, so the erase reaches copies that still have the stroke.
+// view is how the page is cropped and turned (js/page-view.js): the newer
+// setting wins.
 
 const byTime = (a, b) => (a.at - b.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
@@ -21,11 +24,14 @@ export function mergePage(a, b) {
   for (const s of [...((a && a.strokes) || []), ...((b && b.strokes) || [])]) {
     if (s && s.id && !erased.has(s.id) && !strokes.has(s.id)) strokes.set(s.id, s);
   }
-  return { strokes: [...strokes.values()].sort(byTime), erased: [...erased].sort() };
+  const out = { strokes: [...strokes.values()].sort(byTime), erased: [...erased].sort() };
+  const view = mergeView(a && a.view, b && b.view);
+  if (view) out.view = view;
+  return out;
 }
 
 export function pageIsEmpty(p) {
-  return !p || (!(p.strokes && p.strokes.length) && !(p.erased && p.erased.length));
+  return !p || (!(p.strokes && p.strokes.length) && !(p.erased && p.erased.length) && !p.view);
 }
 
 // A score's notes: { pages: { "<page>": page } }.
