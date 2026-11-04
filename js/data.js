@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS = {
   penColor: 0,
   penWidth: 1,
   hlColor: 0,
+  // Adjust pages
+  cropShape: 'free',       // 'free' | 'page' (the page's own shape) | 'screen' (fills the screen)
 };
 
 let settings = { ...DEFAULT_SETTINGS };

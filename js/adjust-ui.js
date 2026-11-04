@@ -6,7 +6,12 @@
 // the pages, keeping what was changed on each. "Apply to" uses this page's
 // adjustment on all, odd or even pages when Done is tapped; after Trim
 // margins, each of those pages is trimmed to its own music.
-import { normRot, normCrop, turnRect, musicBounds, luminance, pagesFor, MIN_CROP } from './page-view.js';
+//
+// "Shape" can keep the frame's proportions: Free, the page's own shape, or
+// the screen's (so the page fills it, with no stage round it). It holds
+// while dragging the frame and when trimming.
+import { normRot, normCrop, turnRect, musicBounds, luminance, pagesFor, withShape, MIN_CROP } from './page-view.js';
+import { getSettings, updateSettings } from './data.js';
 import { saveViews } from './views-store.js';
 import { $, toast } from './ui.js';
 
@@ -40,6 +45,13 @@ export class AdjustUi {
     $('#a-rot-r').addEventListener('click', () => this.#turn(90));
     $('#a-trim').addEventListener('click', () => this.#trim());
     $('#a-reset').addEventListener('click', () => this.#setCrop(null, false));
+    for (const b of this.el.querySelectorAll('#a-shape button')) {
+      b.addEventListener('click', () => {
+        updateSettings({ cropShape: b.dataset.v });
+        if (this.draft.crop) this.#setCrop(this.#shaped(this.draft.crop, this.i, this.draft.rot), this.draft.auto);
+        else this.#update();
+      });
+    }
     for (const b of this.el.querySelectorAll('#a-scope button')) {
       b.addEventListener('click', () => {
         this.scope = b.dataset.v;
@@ -116,7 +128,30 @@ export class AdjustUi {
 
   #turn(deg) {
     this.draft.rot = normRot(this.draft.rot + deg);
+    // The screen's shape is the same whichever way the page is turned.
+    if (this.draft.crop) this.draft.crop = this.#shaped(this.draft.crop, this.i, this.draft.rot);
     this.#draw();
+  }
+
+  // The frame's shape (width ÷ height, in fractions of page i as shown turned
+  // rot), or 0 for Free.
+  #shapeOf(i, rot) {
+    const shape = getSettings().cropShape;
+    if (shape !== 'page' && shape !== 'screen') return 0;
+    if (shape === 'page') return 1;
+    const p = this.viewer.pages[i];
+    const [tw, th] = rot % 180 ? [p.ph, p.pw] : [p.pw, p.ph];
+    const sc = this.viewer.scroller;
+    const screen = sc.clientWidth / Math.max(1, sc.clientHeight - 16); // one page at a time, less its margins
+    return (screen * th) / tw;
+  }
+
+  // crop (fractions of the page in the PDF) kept to the frame's shape, round
+  // its middle.
+  #shaped(crop, i, rot, kind = 'center') {
+    const rf = this.#shapeOf(i, rot);
+    if (!rf || !crop) return crop;
+    return turnRect(withShape(turnRect(crop, rot), rf, kind), 360 - rot);
   }
 
   #setCrop(crop, auto) {
@@ -131,7 +166,7 @@ export class AdjustUi {
     try {
       const crop = await this.#musicOf(this.i);
       if (!crop) toast('No margins to trim on this page.', 2000);
-      this.#setCrop(crop, true);
+      this.#setCrop(this.#shaped(crop, this.i, this.draft.rot), true);
     } catch (e) {
       console.warn(e);
       toast('Couldn’t read this page.', 2000);
@@ -206,6 +241,8 @@ export class AdjustUi {
     s.width = w * 100 + '%';
     s.height = h * 100 + '%';
     for (const b of this.el.querySelectorAll('#a-scope button')) b.setAttribute('aria-checked', String(b.dataset.v === this.scope));
+    const shape = getSettings().cropShape || 'free';
+    for (const b of this.el.querySelectorAll('#a-shape button')) b.setAttribute('aria-checked', String(b.dataset.v === shape));
     $('#a-reset').disabled = !d.crop;
     $('#a-note').textContent = this.#note();
   }
@@ -271,6 +308,8 @@ export class AdjustUi {
       if (k.includes('w')) w = right - x;
       if (k.includes('n')) h = bottom - y;
     }
+    const rf = k === 'move' ? 0 : this.#shapeOf(this.i, this.draft.rot);
+    if (rf) [x, y, w, h] = withShape([x, y, w, h], rf, k);
     this.#setCrop(turnRect([x, y, w, h], 360 - this.draft.rot), false);
   }
 
@@ -300,7 +339,7 @@ export class AdjustUi {
           if (d.auto && t !== this.i) {
             $('#a-note').textContent = `Trimming page ${++n} of ${targets.length}…`;
             try {
-              crop = await this.#musicOf(t);
+              crop = this.#shaped(await this.#musicOf(t), t, d.rot);
             } catch (e) {
               console.warn(e);
               crop = this.#saved(t).crop;

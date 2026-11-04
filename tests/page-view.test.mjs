@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normRot, normCrop, normView, isPlain, mergeView, turnPoint, turnRect, shownBox, pageToShown, shownToPage,
-  musicBounds, luminance, pagesFor, MIN_CROP,
+  musicBounds, luminance, pagesFor, withShape, MIN_CROP,
 } from '../js/page-view.js';
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -139,4 +139,57 @@ test('which pages This page, All, Odd and Even mean', () => {
   assert.deepEqual(pagesFor('all', pages, 2), [0, 1, 2, 3, 4]);
   assert.deepEqual(pagesFor('odd', pages, 2), [0, 2, 4]);
   assert.deepEqual(pagesFor('even', pages, 2), [1, 3]);
+});
+
+const ratio = (r) => r[2] / r[3];
+const inside = (r) => r[0] >= -1e-9 && r[1] >= -1e-9 && r[0] + r[2] <= 1 + 1e-9 && r[1] + r[3] <= 1 + 1e-9;
+
+test('a trimmed frame grows round the music to the shape asked for', () => {
+  // Music in a wide band; shape 1:1 (in fractions).
+  const r = withShape([0.2, 0.4, 0.6, 0.2], 1);
+  near(ratio(r), 1);
+  nearAll(r, [0.2, 0.2, 0.6, 0.6]); // same middle, taller
+  // A tall band, made wide.
+  const t = withShape([0.45, 0.2, 0.1, 0.6], 1.5);
+  near(ratio(t), 1.5);
+  assert.ok(t[2] >= 0.1 && t[3] >= 0.6 - 1e-9); // still takes in the music
+});
+
+test('a frame that would run off the page is as big as fits, and stays on it', () => {
+  const r = withShape([0.1, 0.1, 0.8, 0.8], 2); // twice as wide as tall
+  near(ratio(r), 2);
+  near(r[2], 1);
+  assert.ok(inside(r));
+  const s = withShape([0, 0.85, 0.3, 0.15], 0.5); // near the bottom edge
+  near(ratio(s), 0.5);
+  assert.ok(inside(s));
+});
+
+test('dragging an edge sets the size from that edge and keeps the opposite one', () => {
+  // The top edge dragged: the bottom stays at 0.9.
+  const n = withShape([0.2, 0.3, 0.6, 0.6], 1, 'n');
+  near(n[1] + n[3], 0.9);
+  near(ratio(n), 1);
+  near(n[3], 0.6);
+  // The right edge dragged: the left stays at 0.2.
+  const e = withShape([0.2, 0.2, 0.4, 0.6], 1, 'e');
+  near(e[0], 0.2);
+  near(e[2], 0.4);
+  near(e[3], 0.4);
+});
+
+test('dragging a corner keeps the opposite corner', () => {
+  const r = withShape([0.3, 0.3, 0.5, 0.4], 1, 'nw'); // bottom right stays at (0.8, 0.7)
+  near(ratio(r), 1);
+  near(r[0] + r[2], 0.8);
+  near(r[1] + r[3], 0.7);
+  const s = withShape([0.1, 0.1, 0.3, 0.5], 1, 'se'); // top left stays
+  nearAll([s[0], s[1]], [0.1, 0.1]);
+  near(ratio(s), 1);
+});
+
+test('a frame never gets smaller than a frame can be', () => {
+  const r = withShape([0.5, 0.5, MIN_CROP, MIN_CROP], 4);
+  assert.ok(r[2] >= MIN_CROP - 1e-9 && r[3] >= MIN_CROP - 1e-9);
+  near(ratio(r), 4);
 });
