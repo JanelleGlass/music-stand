@@ -15,6 +15,10 @@ import { getFile, getFileBlob, getPosition, savePosition, getSettings } from './
 import { Ink } from './ink.js';
 import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes } from './paging.js';
 import { Flip } from './flip.js';
+import { fractionOf, scrollFor } from './scrub.js';
+import { shownBox, pageToShown, isPlain, normView } from './page-view.js';
+import { loadViews } from './views-store.js';
+import { placeLayer } from './ink-draw.js';
 
 const GAP = 10;                 // px between pages
 const PAD = 8;                  // px above the first and below the last page
@@ -30,6 +34,15 @@ function freeCanvas(c) {
   // Shrinking a canvas is what actually releases its memory on iOS.
   c.width = 0;
   c.height = 0;
+}
+
+// Sets how page p is shown (null: as it is in the PDF).
+function applyView(p, view) {
+  const v = normView(view);
+  p.view = isPlain(v) ? null : v;
+  const box = shownBox(p.view, p.pw, p.ph);
+  p.w = box.w;
+  p.h = box.h;
 }
 
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -92,11 +105,14 @@ export class Viewer extends EventTarget {
       const to = Math.min(meta.pageCount, seg.to || meta.pageCount);
       for (let n = from; n <= to; n++) {
         const size = (meta.pageSizes && (meta.pageSizes[n - 1] || meta.pageSizes[0])) || [612, 792];
-        pages.push({ fileId: seg.fileId, num: n, w: size[0], h: size[1], top: 0, slot: 0, cssW: 0, cssH: 0, el: null, canvas: null, ink: null, task: null, renderedGen: -1, failed: false });
+        // pw × ph: the page in the PDF; w × h: the part shown, turned (js/page-view.js).
+        pages.push({ fileId: seg.fileId, num: n, pw: size[0], ph: size[1], w: size[0], h: size[1], view: null, inkBox: null, top: 0, slot: 0, cssW: 0, cssH: 0, el: null, canvas: null, ink: null, task: null, renderedGen: -1, failed: false });
       }
     }
     const pos = await getPosition(key);
+    const views = await loadViews(segments.map((s) => s.fileId));
     if (gen !== this.openGen) return;
+    for (const p of pages) applyView(p, views.get(`${p.fileId}:${p.num}`));
     await this.ink.open(pages);
     if (gen !== this.openGen) return;
 
@@ -136,6 +152,46 @@ export class Viewer extends EventTarget {
     this.goToIndex(Math.max(0, idx));
     this.#updateVisible();
     this.#savePositionSoon();
+  }
+
+  // Page adjustments changed: views is Map index → view. The music stays on
+  // the page that's showing.
+  setViews(views) {
+    if (!this.pages.length || !views.size) return;
+    this.ink.commit();
+    this.finishAnimation();
+    const idx = Math.max(0, this.currentIndex);
+    for (const [i, v] of views) {
+      const p = this.pages[i];
+      if (!p) continue;
+      applyView(p, v);
+      this.#release(p); // drawn the old way
+      p.failed = false;
+      p.el.classList.remove('failed');
+    }
+    this.#layout();
+    this.goToIndex(idx);
+    this.#updateVisible();
+  }
+
+  // The whole of page index, turned rot, drawn to fit maxW × maxH CSS px
+  // (for adjusting it). Resolves to a canvas whose pixels are scale × that.
+  async paperImage(index, rot, maxW, maxH, scale = 1) {
+    const p = this.pages[index];
+    const doc = await this.#doc(p.fileId);
+    const page = await doc.getPage(p.num);
+    const turned = rot % 180 ? [p.ph, p.pw] : [p.pw, p.ph];
+    const k = Math.min(maxW / turned[0], maxH / turned[1]) * scale;
+    const vp = page.getViewport({ scale: k, rotation: (page.rotate + rot) % 360 });
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.floor(vp.width));
+    c.height = Math.max(1, Math.floor(vp.height));
+    const ctx = c.getContext('2d', { alpha: false, willReadFrequently: scale < 1 });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    page.cleanup();
+    return c;
   }
 
   close() {
@@ -219,6 +275,29 @@ export class Viewer extends EventTarget {
   // The page in the middle of the screen.
   indexAtCenter() {
     return this.#indexAt(this.scroller.scrollTop + this.scroller.clientHeight / 2);
+  }
+
+  // How far through the music the screen is, 0 to 1 (the scroll bar).
+  get fraction() {
+    const sc = this.scroller;
+    return fractionOf(sc.scrollTop, sc.scrollHeight - sc.clientHeight);
+  }
+
+  // Jumps to fraction f of the way through the music (the scroll bar). One
+  // page at a time, it lands on a page.
+  jumpTo(f) {
+    if (!this.pages.length) return;
+    this.finishAnimation();
+    const sc = this.scroller;
+    sc.scrollTop = scrollFor(f, sc.scrollHeight - sc.clientHeight, this.paged ? this.slot : 0);
+  }
+
+  // The page being read: the one showing one page at a time; scrolling, the
+  // one a third of the way down the screen.
+  pageShowing() {
+    if (!this.pages.length) return -1;
+    const top = this.scroller.scrollTop;
+    return this.paged ? pageAt(top, this.slot, this.pages.length) : this.#indexAt(top + this.scroller.clientHeight * 0.33);
   }
 
   // Whether some of page index is on the screen.
@@ -459,6 +538,15 @@ export class Viewer extends EventTarget {
     s.left = left + 'px';
     s.width = p.cssW + 'px';
     s.height = p.cssH + 'px';
+    // Markings are drawn on the whole page, cropped and turned as the page is.
+    const k = p.cssW / p.w;
+    if (p.view) {
+      const m = pageToShown(p.view, p.pw, p.ph);
+      p.inkBox = { width: p.pw * k, height: p.ph * k, transform: `matrix(${m[0]}, ${m[1]}, ${m[2]}, ${m[3]}, ${m[4] * k}, ${m[5] * k})` };
+    } else {
+      p.inkBox = { width: p.cssW, height: p.cssH, transform: '' };
+    }
+    for (const svg of p.el.querySelectorAll('svg.ink')) placeLayer(svg, p);
   }
 
   #indexAt(y) {
@@ -545,7 +633,7 @@ export class Viewer extends EventTarget {
       else if (p.ink) this.ink.hide(p);
     }
 
-    const cur = this.paged ? pageAt(top, this.slot, this.pages.length) : this.#indexAt(top + vh * 0.33);
+    const cur = this.pageShowing();
     if (cur !== this.currentIndex) {
       this.currentIndex = cur;
       const p = this.pages[cur];
@@ -607,12 +695,15 @@ export class Viewer extends EventTarget {
     let scale = (p.cssW / p.w) * dpr;
     const px = p.w * scale * (p.h * scale);
     if (px > MAX_PIXELS) scale *= Math.sqrt(MAX_PIXELS / px);
-    const vp = page.getViewport({ scale });
+    // Only the part shown is drawn, turned as it shows.
+    const box = shownBox(p.view, p.pw, p.ph);
+    const rot = p.view ? p.view.rot : 0;
+    const vp = page.getViewport({ scale, rotation: (page.rotate + rot) % 360, offsetX: -box.x * scale, offsetY: -box.y * scale });
 
     const c = document.createElement('canvas');
     c.className = 'pdf';
-    c.width = Math.floor(vp.width);
-    c.height = Math.floor(vp.height);
+    c.width = Math.max(1, Math.floor(box.w * scale));
+    c.height = Math.max(1, Math.floor(box.h * scale));
     try {
       p.task = page.render({ canvasContext: c.getContext('2d', { alpha: false }), viewport: vp });
       await p.task.promise;

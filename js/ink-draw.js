@@ -57,13 +57,28 @@ export function pathData(pts) {
   return `${d}L${pts[pts.length - 2]} ${pts[pts.length - 1]}`;
 }
 
+// The page's size in the PDF (pw × ph); h and w in older callers.
+const paperW = (page) => page.pw || page.w;
+const paperH = (page) => page.ph || page.h;
+
 function svgLayer(page, cls) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', `ink ${cls}`);
-  svg.setAttribute('viewBox', `0 0 ${PAGE_W} ${round((PAGE_W * page.h) / page.w)}`);
+  svg.setAttribute('viewBox', `0 0 ${PAGE_W} ${round((PAGE_W * paperH(page)) / paperW(page))}`);
   svg.setAttribute('preserveAspectRatio', 'none');
   svg.setAttribute('aria-hidden', 'true');
+  placeLayer(svg, page);
   return svg;
+}
+
+// Sizes a layer to the whole page and crops and turns it as the page shows
+// (page.inkBox, from the viewer). Without one it fills the page element.
+export function placeLayer(svg, page) {
+  const b = page.inkBox;
+  const s = svg.style;
+  s.width = b ? b.width + 'px' : '';
+  s.height = b ? b.height + 'px' : '';
+  s.transform = b ? b.transform : '';
 }
 
 // The two layers of a page, added to its element.

@@ -72,6 +72,49 @@ icon shows which one is on), and the score stays on the page you're reading.
   either side. Zoom is for scrolling, so its buttons hide in this mode.
 - With *Write with a finger* on, a two-finger swipe turns the page.
 
+## Scroll bar
+
+A scroll bar runs down the right edge of a score for getting around long
+scores quickly. It appears with the top bar (tap the middle of the page) and
+while you scroll by hand, and stays out of the way otherwise.
+
+- Drag its handle: a label beside it shows the page you'll land on, and the
+  music follows your finger. Tap anywhere on the track to jump there.
+- One page at a time, it moves whole pages, without the page-turn animation.
+- It hides while the markings tools are open (so you can write near the
+  right edge), and when the whole score fits on the screen.
+
+## Adjusting pages: crop and turn
+
+The **crop button** in a score's top bar opens *Adjust pages* for the page
+you're on. It shows the whole page with an orange frame round the part that
+will show.
+
+- Drag the frame's edges or corners to crop, or drag inside it to move it.
+- **Turn left / Turn right** for a page scanned sideways or upside down.
+- **Trim margins** finds the music on the page and crops to it, keeping a
+  little paper round it. It ignores the edge of a scan and a dark scanner
+  shadow along the edge, but check a page with faint marks (page numbers,
+  tempo markings) near the edge, and widen the frame if it cut them.
+- **Whole page** takes the crop away.
+- ‹ › (or the arrow keys) go through the pages; each keeps what you did to it.
+- **Apply to** *This page*, *All*, *Odd* or *Even* (by the page's number in
+  the PDF) says which pages Done changes. After Trim margins, each of those
+  pages is trimmed to its own music; otherwise they all get this page's crop
+  and turn.
+- **Done** saves; **Cancel** leaves the pages as they were.
+
+A cropped page is laid out larger, as if its margins weren't there, in both
+scrolling and one page at a time. The PDF itself isn't changed: the PDF in
+the Google Drive folder, or taken out of a backup, still has its margins.
+Adjustments are kept with the page's markings, so they sync through Google
+Drive and go in backups the same way (restoring with *Replace* brings back
+the backup's adjustments).
+
+Markings stay on the music they were written on: turning a page turns its
+markings with it, and marks in a margin that's cropped away are hidden, not
+deleted (they show again with Whole page).
+
 ## Markings, favorites and folders (Phase 2)
 
 - **Write on the music with the Apple Pencil** whenever a score is open:
@@ -234,6 +277,10 @@ index.html, css/app.css      UI
 js/app.js                    startup, routing, wink → page turn, keys, wake lock
 js/viewer.js                 PDF viewer: scrolling or one page at a time (lazy rendering, animated turns, swipes)
 js/paging.js                 one page at a time: page fitting, swipes, how far a page has turned (unit tested)
+js/scrubber.js, js/scrub.js  the scroll bar down the right edge (its arithmetic is unit tested)
+js/page-view.js              page adjustments: crop and turn geometry, finding the music to trim (unit tested)
+js/adjust-ui.js              the Adjust pages screen
+js/views-store.js            saving page adjustments, with the page's markings
 js/flip.js                   a page turning like a book's, drawn over the music
 js/library.js                library screen, favorites and folders bar
 js/lists.js                  favorites and folders (data)

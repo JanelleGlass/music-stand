@@ -78,6 +78,7 @@
       <button id="v-star" class="icon-btn star-btn" aria-label="Add to Favorites" aria-pressed="false"><span data-icon="star"></span></button>
       <button id="v-notes" class="icon-btn notes-btn" aria-label="Markings" aria-pressed="false"><span data-icon="pen"></span></button>
       <div id="notes-tools" class="notes-tools" role="toolbar" aria-label="Markings" hidden></div>
+      <button id="v-adjust" class="icon-btn" aria-label="Adjust pages" title="Adjust pages"><span data-icon="crop"></span></button>
       <button id="v-mode" class="icon-btn" aria-label="One page at a time" aria-pressed="false"></button>
       <div class="zoom" role="group" aria-label="Zoom">
         <button id="v-zoom-out" class="icon-btn" aria-label="Zoom out"><span data-icon="minus"></span></button>
@@ -89,8 +90,47 @@
     </header>
 
     <div id="v-pill" class="pagepill"></div>
+    <div id="v-scrub" class="scrub none" aria-hidden="true"><div class="scrub-handle"><span class="scrub-label"></span></div></div>
 
     <div id="notes-pop" class="notes-pop" hidden></div>
+
+    <div id="adjust" class="adjust" role="dialog" aria-label="Adjust pages" hidden>
+      <header class="adjust-bar">
+        <button id="a-cancel" class="btn small">Cancel</button>
+        <div class="adjust-nav">
+          <button id="a-prev" class="icon-btn" aria-label="Previous page"><span data-icon="back"></span></button>
+          <span id="a-num"></span>
+          <button id="a-next" class="icon-btn" aria-label="Next page"><span data-icon="next"></span></button>
+        </div>
+        <button id="a-done" class="btn small primary">Done</button>
+      </header>
+      <div class="adjust-stage">
+        <div class="adjust-paper">
+          <div class="adjust-crop">
+            <i data-h="n"></i><i data-h="s"></i><i data-h="e"></i><i data-h="w"></i>
+            <i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i>
+          </div>
+        </div>
+      </div>
+      <footer class="adjust-tools">
+        <div class="adjust-row">
+          <button id="a-rot-l" class="btn small"><span data-icon="turn-left"></span>Turn left</button>
+          <button id="a-rot-r" class="btn small"><span data-icon="turn-right"></span>Turn right</button>
+          <button id="a-trim" class="btn small"><span data-icon="crop"></span>Trim margins</button>
+          <button id="a-reset" class="btn small">Whole page</button>
+        </div>
+        <div class="adjust-row">
+          <span class="adjust-label">Apply to</span>
+          <div class="seg" id="a-scope" role="radiogroup" aria-label="Apply to">
+            <button type="button" data-v="page" role="radio">This page</button>
+            <button type="button" data-v="all" role="radio">All</button>
+            <button type="button" data-v="odd" role="radio">Odd</button>
+            <button type="button" data-v="even" role="radio">Even</button>
+          </div>
+        </div>
+        <p id="a-note" class="adjust-note"></p>
+      </footer>
+    </div>
 
     <div id="wink-hud" class="wink-hud off" aria-hidden="true">
       <svg viewBox="0 0 40 40"><circle class="track" cx="20" cy="20" r="16"/><circle class="prog" cx="20" cy="20" r="16"/></svg>

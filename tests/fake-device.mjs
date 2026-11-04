@@ -78,6 +78,17 @@ export class FakeDevice {
     this.#notesPage(id, page, { strokes: [], erased: [strokeId] });
   }
 
+  // Crops and turns a page (js/page-view.js).
+  adjust(id, page, rot, crop = null) {
+    this.#notesPage(id, page, { strokes: [], erased: [], view: { rot, crop, at: this.now() } });
+  }
+
+  // How a page is shown: { rot, crop }, or null.
+  view(id, page) {
+    const r = this.annotations.get(`${id}:${page}`);
+    return r && r.view ? { rot: r.view.rot, crop: r.view.crop } : null;
+  }
+
   #notesPage(id, page, change) {
     const key = `${id}:${page}`;
     const merged = mergePage(this.annotations.get(key), change);

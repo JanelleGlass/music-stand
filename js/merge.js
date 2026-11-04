@@ -90,12 +90,15 @@ export function takeIncoming(here, incoming) {
 // How a backup's record meets the one here, per store. Returns the record
 // to write, or null to keep the one here.
 //   positions    this device's reading place wins (takeIncoming)
-//   annotations  a page's markings are combined, as sync does
+//   annotations  a page's markings are combined, as sync does; with Replace
+//                the backup's page adjustments win
 //   lists        folders are combined, as sync does; with Replace the
 //                backup's folders count as changed just now, so they win
 //                over changes on other devices when sync next runs
 export function combineRecord(store, here, incoming, { replace = false, now = Date.now() } = {}) {
   if (store === 'annotations') {
+    // With Replace, the backup's page adjustments count as set just now.
+    if (replace && incoming && incoming.view) incoming = { ...incoming, view: { ...incoming.view, at: Math.max(now, (Number(incoming.view.at) || 0) + 1) } };
     const page = mergePage(here, incoming);
     if (pageIsEmpty(page)) return null;
     return { id: incoming.id, fileId: incoming.fileId, page: incoming.page, ...page, updatedAt: now };

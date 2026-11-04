@@ -1,7 +1,7 @@
 // Run with: node --test tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergePage, mergeNotes, mergeFolder, mergeFolders, restampFolder, sameContent } from '../js/notes-merge.js';
+import { mergePage, pageIsEmpty, mergeNotes, mergeFolder, mergeFolders, restampFolder, sameContent } from '../js/notes-merge.js';
 
 const stroke = (id, at) => ({ id, at, tool: 'pen', color: '#000000', w: 2, pts: [0, 0, 10, 10] });
 
@@ -75,4 +75,19 @@ test('a restamped folder keeps its order', () => {
   const order = [...r.members].sort((x, y) => x.at - y.at).map((m) => m.score);
   assert.deepEqual(order, ['z', 'm', 'a']);
   assert.ok(r.members.every((m) => m.at >= 100));
+});
+
+test('a page\u2019s adjustment travels with its markings; the newer wins', () => {
+  const stroke = { id: 's1', at: 1, tool: 'pen', color: '#000', w: 2, pts: [0, 0, 1, 1] };
+  const a = { strokes: [stroke], erased: [], view: { rot: 90, crop: null, at: 10 } };
+  const b = { strokes: [], erased: [], view: { rot: 0, crop: [0.1, 0.1, 0.8, 0.8], at: 20 } };
+  const ab = mergePage(a, b);
+  assert.deepEqual(ab, mergePage(b, a));
+  assert.deepEqual(ab.view, { rot: 0, crop: [0.1, 0.1, 0.8, 0.8], at: 20 });
+  assert.deepEqual(ab.strokes, [stroke]);
+  assert.deepEqual(mergePage(ab, ab), ab);
+  // Pages without one stay as they were.
+  assert.equal('view' in mergePage({ strokes: [stroke], erased: [] }, null), false);
+  // A page with only an adjustment is kept.
+  assert.equal(pageIsEmpty({ strokes: [], erased: [], view: { rot: 0, crop: null, at: 1 } }), false);
 });

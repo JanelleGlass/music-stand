@@ -139,3 +139,12 @@ test('replacing keeps this device\'s eye calibration', () => {
   assert.deepEqual(restoredSettings(null, { winkSwap: true, nightMode: true }), { winkSwap: true });
   assert.deepEqual(restoredSettings({ winkSwap: true }, {}), {});
 });
+
+test('page adjustments: Merge keeps the newer, Replace makes the backup’s win', async () => {
+  const { combineRecord } = await import('../js/merge.js');
+  const here = { id: 'f:2', fileId: 'f', page: 2, strokes: [], erased: [], view: { rot: 90, crop: null, at: 500 } };
+  const backup = { id: 'f:2', fileId: 'f', page: 2, strokes: [], erased: [], view: { rot: 0, crop: [0.1, 0.1, 0.8, 0.8], at: 100 } };
+  assert.equal(combineRecord('annotations', here, backup, { now: 1000 }).view.rot, 90);
+  const replaced = combineRecord('annotations', here, backup, { replace: true, now: 1000 }).view;
+  assert.deepEqual([replaced.rot, replaced.crop, replaced.at], [0, [0.1, 0.1, 0.8, 0.8], 1000]);
+});

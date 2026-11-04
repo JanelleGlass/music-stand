@@ -338,3 +338,29 @@ test('two copies of one PDF here don’t look like changes waiting to sync', asy
   a.draw(id, 2);
   assert.equal(await dataPending(a), true);
 });
+
+test('page adjustments travel, and the newer one wins', async () => {
+  const { drive, devices: [a, b] } = setup('A', 'B');
+  const id = a.add('Grace', 'g');
+  const s1 = a.draw(id, 2);
+  a.adjust(id, 2, 90, [0.1, 0.1, 0.8, 0.8]);
+  await sync(drive, a);
+  await sync(drive, b);
+  assert.deepEqual(b.view(id, 2), { rot: 90, crop: [0.1, 0.1, 0.8, 0.8] });
+  assert.deepEqual(b.marks(id, 2), [s1]); // the markings come too
+  // Both change it; B's is later.
+  a.adjust(id, 2, 180);
+  b.clock.now += 1000;
+  b.adjust(id, 2, 0, [0, 0.2, 1, 0.6]);
+  await sync(drive, a);
+  await sync(drive, b);
+  await sync(drive, a);
+  assert.deepEqual(a.view(id, 2), { rot: 0, crop: [0, 0.2, 1, 0.6] });
+  assert.deepEqual(b.view(id, 2), { rot: 0, crop: [0, 0.2, 1, 0.6] });
+  // Putting a page back as it was travels too.
+  a.clock.now += 1000;
+  a.adjust(id, 2, 0, null);
+  await sync(drive, a);
+  await sync(drive, b);
+  assert.deepEqual(b.view(id, 2), { rot: 0, crop: null });
+});
