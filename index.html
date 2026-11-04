@@ -106,6 +106,7 @@
       </header>
       <div class="adjust-stage">
         <div class="adjust-paper">
+          <div class="adjust-grid" aria-hidden="true"></div>
           <div class="adjust-crop">
             <i data-h="n"></i><i data-h="s"></i><i data-h="e"></i><i data-h="w"></i>
             <i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i>
@@ -118,6 +119,12 @@
           <button id="a-rot-r" class="btn small"><span data-icon="turn-right"></span>Turn right</button>
           <button id="a-trim" class="btn small"><span data-icon="crop"></span>Trim margins</button>
           <button id="a-reset" class="btn small">Whole page</button>
+        </div>
+        <div class="adjust-row adjust-tilt">
+          <label class="adjust-label" for="a-tilt">Straighten</label>
+          <input type="range" id="a-tilt" min="-10" max="10" step="0.1" value="0">
+          <button id="a-tilt-out" type="button" class="tilt-val" aria-label="Set straightening back to 0">0.0°</button>
+          <button id="a-level" class="btn small">Auto</button>
         </div>
         <div class="adjust-row">
           <span class="adjust-label">Shape</span>

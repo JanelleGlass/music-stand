@@ -18,7 +18,7 @@ export async function loadViews(fileIds) {
   return out;
 }
 
-// Saves views: [{ fileId, num, view: { rot, crop } }], stamped now.
+// Saves views: [{ fileId, num, view: { rot, tilt, crop } }], stamped now.
 export async function saveViews(list) {
   if (!list.length) return;
   const at = Date.now();
@@ -27,7 +27,7 @@ export async function saveViews(list) {
       const key = `${fileId}:${num}`;
       const req = s.annotations.get(key);
       req.onsuccess = () => {
-        const merged = mergePage(req.result, { strokes: [], erased: [], view: { rot: view.rot, crop: view.crop, at } });
+        const merged = mergePage(req.result, { strokes: [], erased: [], view: { rot: view.rot, tilt: view.tilt || 0, crop: view.crop, at } });
         if (!pageIsEmpty(merged)) s.annotations.put({ id: key, fileId, page: num, ...merged, updatedAt: at });
       };
     }

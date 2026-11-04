@@ -7,17 +7,24 @@
 // adjustment on all, odd or even pages when Done is tapped; after Trim
 // margins, each of those pages is trimmed to its own music.
 //
+// Straighten turns a crooked scan level, a little at a time (guide lines show
+// while the slider moves); Auto finds the angle from the staff lines, and
+// with Apply to, straightens each page by its own amount. Tap the angle to
+// set it back to 0.
+//
 // "Shape" can keep the frame's proportions: Free, the page's own shape, or
 // the screen's (so the page fills it, with no stage round it). It holds
 // while dragging the frame and when trimming.
-import { normRot, normCrop, turnRect, musicBounds, luminance, pagesFor, withShape, MIN_CROP } from './page-view.js';
+import { normRot, normCrop, normTilt, turnRect, musicBounds, findTilt, luminance, pagesFor, withShape, MIN_CROP } from './page-view.js';
 import { getSettings, updateSettings } from './data.js';
 import { saveViews } from './views-store.js';
 import { $, toast } from './ui.js';
 
 const TRIM_PX = 360; // pages are measured for trimming at about this size
 
-const same = (a, b) => normRot(a.rot) === normRot(b.rot) && JSON.stringify(normCrop(a.crop)) === JSON.stringify(normCrop(b.crop));
+const same = (a, b) => normRot(a.rot) === normRot(b.rot) && normTilt(a.tilt) === normTilt(b.tilt) && JSON.stringify(normCrop(a.crop)) === JSON.stringify(normCrop(b.crop));
+const TILT_PX = 700; // pages are measured for straightening at about this size
+const degrees = (t) => `${t > 0 ? '+' : t < 0 ? '−' : ''}${Math.abs(t).toFixed(1)}°`;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
 export class AdjustUi {
@@ -30,7 +37,8 @@ export class AdjustUi {
     this.frame = this.el.querySelector('.adjust-crop');
     this.open_ = false;
     this.busy = false;
-    this.drafts = new Map(); // page index → { rot, crop, auto }
+    this.drafts = new Map(); // page index → { rot, tilt, crop, auto, autoTilt }
+    this.levelTimer = 0;
     this.i = 0;
     this.draft = null;
     this.scope = 'page';
@@ -45,6 +53,11 @@ export class AdjustUi {
     $('#a-rot-r').addEventListener('click', () => this.#turn(90));
     $('#a-trim').addEventListener('click', () => this.#trim());
     $('#a-reset').addEventListener('click', () => this.#setCrop(null, false));
+    const slider = $('#a-tilt');
+    slider.addEventListener('input', () => this.#setTilt(slider.value, false, true));
+    slider.addEventListener('change', () => this.#leveling(false));
+    $('#a-tilt-out').addEventListener('click', () => this.#setTilt(0, false));
+    $('#a-level').addEventListener('click', () => this.#autoLevel());
     for (const b of this.el.querySelectorAll('#a-shape button')) {
       b.addEventListener('click', () => {
         updateSettings({ cropShape: b.dataset.v });
@@ -104,12 +117,12 @@ export class AdjustUi {
 
   #saved(i) {
     const p = this.viewer.pages[i];
-    return { rot: p.view ? p.view.rot : 0, crop: p.view ? p.view.crop : null };
+    return { rot: p.view ? p.view.rot : 0, tilt: (p.view && p.view.tilt) || 0, crop: p.view ? p.view.crop : null };
   }
 
   #load(i) {
     this.i = i;
-    this.draft = { ...(this.drafts.get(i) || { ...this.#saved(i), auto: false }) };
+    this.draft = { ...(this.drafts.get(i) || { ...this.#saved(i), auto: false, autoTilt: false }) };
     this.#draw();
   }
 
@@ -160,11 +173,54 @@ export class AdjustUi {
     this.#update();
   }
 
+  // ---- Straightening ----
+
+  #setTilt(t, auto, sliding = false) {
+    this.draft.tilt = normTilt(t);
+    this.draft.autoTilt = auto;
+    this.#leveling(sliding);
+    this.#update();
+  }
+
+  // Guide lines while the slider moves, and a moment after.
+  #leveling(on) {
+    clearTimeout(this.levelTimer);
+    if (on) this.paper.classList.add('leveling');
+    else this.levelTimer = setTimeout(() => this.paper.classList.remove('leveling'), 1200);
+  }
+
+  async #autoLevel() {
+    if (this.busy) return;
+    this.#setBusy(true, 'Finding the staff lines…');
+    try {
+      const t = await this.#tiltOf(this.i);
+      if (!t) toast('This page looks level already.', 2000);
+      this.#setTilt(t, true);
+    } catch (e) {
+      console.warn(e);
+      toast('Couldn’t read this page.', 2000);
+    } finally {
+      this.#setBusy(false);
+    }
+  }
+
+  // The tilt that levels page i's staff lines.
+  async #tiltOf(i) {
+    const c = await this.viewer.paperImage(i, 0, TILT_PX, TILT_PX);
+    try {
+      const data = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+      return findTilt(luminance(data), c.width, c.height);
+    } finally {
+      c.width = 0;
+      c.height = 0;
+    }
+  }
+
   async #trim() {
     if (this.busy) return;
     this.#setBusy(true, 'Finding the music…');
     try {
-      const crop = await this.#musicOf(this.i);
+      const crop = await this.#musicOf(this.i, this.draft.tilt);
       if (!crop) toast('No margins to trim on this page.', 2000);
       this.#setCrop(this.#shaped(crop, this.i, this.draft.rot), true);
     } catch (e) {
@@ -175,9 +231,10 @@ export class AdjustUi {
     }
   }
 
-  // The crop round the music on page i (null: nothing to trim).
-  async #musicOf(i) {
-    const c = await this.viewer.paperImage(i, 0, TRIM_PX, TRIM_PX);
+  // The crop round the music on page i, straightened tilt (null: nothing to
+  // trim).
+  async #musicOf(i, tilt = 0) {
+    const c = await this.viewer.paperImage(i, 0, TRIM_PX, TRIM_PX, 1, tilt);
     try {
       const data = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
       return musicBounds(luminance(data), c.width, c.height);
@@ -228,6 +285,7 @@ export class AdjustUi {
     } else {
       this.paper.prepend(c);
     }
+    this.#update(); // straightened as the draft is now
   }
 
   // The frame, the buttons, and what Done will do.
@@ -244,6 +302,12 @@ export class AdjustUi {
     const shape = getSettings().cropShape || 'free';
     for (const b of this.el.querySelectorAll('#a-shape button')) b.setAttribute('aria-checked', String(b.dataset.v === shape));
     $('#a-reset').disabled = !d.crop;
+    // The page is drawn level; straightening turns the drawing.
+    const c = this.paper.querySelector('canvas');
+    if (c) c.style.transform = d.tilt ? `rotate(${d.tilt}deg)` : '';
+    const slider = $('#a-tilt');
+    if (Number(slider.value) !== d.tilt) slider.value = String(d.tilt);
+    $('#a-tilt-out').textContent = degrees(d.tilt);
     $('#a-note').textContent = this.#note();
   }
 
@@ -254,18 +318,22 @@ export class AdjustUi {
     const also = others ? ` (and the ${others === 1 ? 'other page' : `${others} other pages`} you changed)` : '';
     if (this.scope === 'page') return `Done changes this page${also}.`;
     const which = { all: `all ${n} pages`, odd: `the ${n} odd pages`, even: `the ${n} even pages` }[this.scope];
-    if (this.draft.auto) {
+    const d = this.draft;
+    if (d.auto || d.autoTilt) {
       const each = { all: `each of the ${n} pages`, odd: `each of the ${n} odd pages`, even: `each of the ${n} even pages` }[this.scope];
-      return `Done trims ${each} to its own music${this.draft.rot ? ', turned the same way' : ''}.`;
+      const acts = [d.autoTilt && 'straightens', d.auto && 'trims'].filter(Boolean).join(' and ');
+      const kept = [d.rot && 'turned', !d.autoTilt && d.tilt && 'straightened', !d.auto && d.crop && 'cropped'].filter(Boolean);
+      const rest = kept.length ? `, ${kept.join(' and ')} the same way` : '';
+      return `Done ${acts} ${each} to suit its own music${rest}.`;
     }
-    if (!this.draft.crop && !this.draft.rot) return `Done shows ${which} whole, as in the PDF.`;
+    if (!d.crop && !d.rot && !d.tilt) return `Done shows ${which} whole, as in the PDF.`;
     return `Done shows ${which} the way this one is.`;
   }
 
   #setBusy(on, text = '') {
     this.busy = on;
     this.el.classList.toggle('busy', on);
-    for (const b of this.el.querySelectorAll('button')) b.disabled = on;
+    for (const b of this.el.querySelectorAll('button, input')) b.disabled = on;
     if (on) $('#a-note').textContent = text;
     else {
       $('#a-prev').disabled = this.i === 0;
@@ -327,7 +395,7 @@ export class AdjustUi {
     const v = this.viewer;
     const pages = v.pages;
     const out = new Map();
-    for (const [i, d] of this.drafts) out.set(i, { rot: d.rot, crop: d.crop });
+    for (const [i, d] of this.drafts) out.set(i, { rot: d.rot, tilt: d.tilt, crop: d.crop });
     const d = this.draft;
     if (this.scope !== 'page') {
       const targets = pagesFor(this.scope, pages, this.i);
@@ -335,24 +403,26 @@ export class AdjustUi {
       try {
         let n = 0;
         for (const t of targets) {
+          let tilt = d.tilt;
           let crop = d.crop;
-          if (d.auto && t !== this.i) {
-            $('#a-note').textContent = `Trimming page ${++n} of ${targets.length}…`;
+          if ((d.auto || d.autoTilt) && t !== this.i) {
+            $('#a-note').textContent = `Working on page ${++n} of ${targets.length - 1}…`;
             try {
-              crop = this.#shaped(await this.#musicOf(t), t, d.rot);
+              if (d.autoTilt) tilt = await this.#tiltOf(t);
+              if (d.auto) crop = this.#shaped(await this.#musicOf(t, tilt), t, d.rot);
             } catch (e) {
               console.warn(e);
-              crop = this.#saved(t).crop;
+              ({ tilt, crop } = this.#saved(t));
             }
             if (!this.open_) return;
           }
-          out.set(t, { rot: d.rot, crop });
+          out.set(t, { rot: d.rot, tilt, crop });
         }
       } finally {
         this.#setBusy(false);
       }
     } else {
-      out.set(this.i, { rot: d.rot, crop: d.crop });
+      out.set(this.i, { rot: d.rot, tilt: d.tilt, crop: d.crop });
     }
     const changed = [...out].filter(([i, view]) => !same(view, this.#saved(i)));
     if (changed.length) {
