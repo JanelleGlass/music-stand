@@ -84,6 +84,59 @@ while you scroll by hand, and stays out of the way otherwise.
 - It hides while the markings tools are open (so you can write near the
   right edge), and when the whole score fits on the screen.
 
+## Index: hymns, sections and tap areas
+
+The **list button** next to the page number in a score's top bar opens the
+score's *Index*: where its hymns and sections start. It's made for hymnals,
+including scanned ones.
+
+- **Hymn here** adds the hymn that starts at the top of the screen (it
+  suggests the number after the hymn before it). **Section here** adds a
+  part of the book, such as Advent or Communion.
+- **Add many** adds a whole run at once: for example hymns 1 to 600, the
+  first on page 12, one every page (or every 2 pages). Hymns already in the
+  index stay where they are; move any that land wrong with the pencil
+  button beside them.
+- **Paste titles** sets titles from a list with one hymn per line, number
+  first or last, as a printed index has them (`245 Amazing Grace`,
+  `Abide with Me .... 10`). Type the list, or copy one from a website.
+- **Search** by hymn number (`245`, then Return goes straight there) or by
+  any words of a title (`grace amazing`), ignoring case, accents and
+  punctuation. Tap a row to go to it.
+- The **scroll bar** shows the sections and hymn numbers, as many as fit
+  down the screen; tap one to go there. While you drag the handle, its label
+  names the hymn you'll land on.
+- **Tap areas** make a scanned index page clickable. Go to the index page,
+  tap *Tap areas*, and drag across a line (say *245 Amazing Grace*). Then
+  type the hymn number it goes to (or a page). Tapping that line while
+  reading then goes to the hymn, and a **Back** button shows for a few
+  seconds to return to the index. Tap an area while drawing to change or
+  delete it. ‹ › go through the pages while drawing.
+
+The index is kept with the score's markings: it syncs through Google Drive
+and goes into backups the same way.
+
+### Reading scanned pages (text recognition)
+
+In a scanned PDF the words are pictures, so Music Stand reads them with
+text recognition (OCR), on the iPad itself:
+
+- **Read the printed index**: *Paste titles* › *Read pages* (say pages 3
+  to 6, where the book's index is) reads the index and puts the hymns it
+  finds in the list, number and title. Check the list, fix what was misread
+  (text recognition mixes up some letters and numbers), then *Set titles*.
+  An index in two columns works too.
+- **Search the words of the music**: *Read all pages* reads every page once
+  (it can take a while for a whole hymnal: a few seconds a page; you can
+  keep reading the music meanwhile, and it carries on where it stopped).
+  Then searching finds the pages with those words, lyrics included, even
+  when they're printed in syllables ("A - maz - ing"), under *Words on the
+  pages*.
+- The first use downloads text recognition (about 11 MB), so do it once
+  while online; after that it works offline. What the pages say is kept on
+  this device only (it isn't synced or backed up, and reading again is
+  quick to redo).
+
 ## Adjusting pages: crop, turn and straighten
 
 The **crop button** in a score's top bar opens *Adjust pages* for the page
@@ -181,7 +234,7 @@ account:
 - If many scores disappear from Drive at once (for example the Music Stand
   folder went to the trash), nothing is deleted on the iPad until you choose,
   from the **Review** strip, to keep them or delete them.
-- **Markings, page adjustments, zoom, favorites and folders** sync too, in one small file in the
+- **Markings, page adjustments, the index, zoom, favorites and folders** sync too, in one small file in the
   Music Stand folder ("Music Stand notes and folders.json"; leave it as it
   is). A score is recognised by its PDF, so markings and folders come back if
   a deleted score is restored from the Drive trash. Strokes written on two
@@ -295,6 +348,10 @@ js/app.js                    startup, routing, wink → page turn, keys, wake lo
 js/viewer.js                 PDF viewer: scrolling or one page at a time (lazy rendering, animated turns, swipes)
 js/paging.js                 one page at a time: page fitting, swipes, how far a page has turned (unit tested)
 js/scrubber.js, js/scrub.js  the scroll bar down the right edge (its arithmetic is unit tested)
+js/index-ui.js               the Index panel, and drawing tap areas on a printed index
+js/marks.js                  the open score's index marks: saving, tap-area layers
+js/index-logic.js            index rules: search, ordering, scroll bar labels, pasted lists, page words (unit tested)
+js/ocr.js                    text recognition of scanned pages (Tesseract.js), and the text kept per page
 js/page-view.js              page adjustments: crop, turn and straighten geometry, finding the music and the staff lines' angle (unit tested)
 js/adjust-ui.js              the Adjust pages screen
 js/views-store.js            saving page adjustments, with the page's markings
@@ -319,7 +376,7 @@ js/sync-engine.js            carries out one sync through two adapters (unit tes
 js/sync-local.js, sync-remote.js  the adapters: IndexedDB library, Google Drive
 js/sync.js, js/sync-ui.js    when sync runs, its sign-in, Settings section and cloud button
 sw.js, manifest.webmanifest  offline + Home Screen install
-vendor/                      PDF.js 4.10.38 (legacy build), MediaPipe tasks-vision 0.10.21, face model
+vendor/                      PDF.js 4.10.38 (legacy build), MediaPipe tasks-vision 0.10.21, face model, Tesseract.js 6.0.1 (core 6.0.0, English data 4.0.0_best_int)
 tests/                       node --test tests/*.test.mjs (fake Drive and devices for sync)
 ```
 
@@ -333,5 +390,8 @@ caches files, so after editing, bump `VERSION` or clear site data in the browser
 ## Third-party code
 
 - [PDF.js](https://github.com/mozilla/pdf.js), Apache License 2.0 (`vendor/pdfjs/LICENSE`)
+- [Tesseract.js](https://github.com/naptha/tesseract.js) and tesseract.js-core,
+  Apache License 2.0 (`vendor/tesseract/LICENSE`, `vendor/tesseract/LICENSE-core`),
+  with the English model from [tessdata](https://github.com/tesseract-ocr/tessdata_best), Apache License 2.0
 - [MediaPipe Tasks Vision](https://github.com/google-ai-edge/mediapipe) and the
   Face Landmarker model, Apache License 2.0

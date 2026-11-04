@@ -1,6 +1,6 @@
 // Rules for bringing a backup into the library. No DOM or IndexedDB here, so
 // they can be unit tested (tests/merge.test.mjs).
-import { mergePage, pageIsEmpty, mergeFolder, restampFolder } from './notes-merge.js';
+import { mergePage, pageIsEmpty, mergeFolder, restampFolder, restampMarks } from './notes-merge.js';
 
 // Finds the file on this device that a backup's file is a copy of: first by
 // id (it was copied here before), then by content hash (the same PDF was
@@ -99,6 +99,8 @@ export function combineRecord(store, here, incoming, { replace = false, now = Da
   if (store === 'annotations') {
     // With Replace, the backup's page adjustments count as set just now.
     if (replace && incoming && incoming.view) incoming = { ...incoming, view: { ...incoming.view, at: Math.max(now, (Number(incoming.view.at) || 0) + 1) } };
+    // And so do its index marks.
+    if (replace && incoming && Array.isArray(incoming.marks) && incoming.marks.length) incoming = { ...incoming, marks: restampMarks(incoming.marks, now) };
     const page = mergePage(here, incoming);
     if (pageIsEmpty(page)) return null;
     return { id: incoming.id, fileId: incoming.fileId, page: incoming.page, ...page, updatedAt: now };

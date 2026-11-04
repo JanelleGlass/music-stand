@@ -13,6 +13,7 @@
 import { openPdf, isCancel } from './pdfdoc.js';
 import { getFile, getFileBlob, getPosition, savePosition, getSettings, libraryEdited } from './data.js';
 import { Ink } from './ink.js';
+import { Marks } from './marks.js';
 import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes } from './paging.js';
 import { Flip } from './flip.js';
 import { fractionOf, scrollFor } from './scrub.js';
@@ -77,6 +78,8 @@ export class Viewer extends EventTarget {
     this.saveTimer = 0;
     this.guideTimer = 0;
     this.ink = new Ink(this);
+    this.marks = new Marks(this);
+    this.inputBlocked = false; // tap areas are being drawn (js/index-ui.js)
 
     this.scroller.addEventListener('scroll', () => this.#onScroll(), { passive: true });
     // Dragging the page takes over from a running page-turn animation (the
@@ -106,7 +109,7 @@ export class Viewer extends EventTarget {
       for (let n = from; n <= to; n++) {
         const size = (meta.pageSizes && (meta.pageSizes[n - 1] || meta.pageSizes[0])) || [612, 792];
         // pw × ph: the page in the PDF; w × h: the part shown, turned (js/page-view.js).
-        pages.push({ fileId: seg.fileId, num: n, pw: size[0], ph: size[1], w: size[0], h: size[1], view: null, inkBox: null, top: 0, slot: 0, cssW: 0, cssH: 0, el: null, canvas: null, ink: null, task: null, renderedGen: -1, failed: false });
+        pages.push({ fileId: seg.fileId, num: n, pw: size[0], ph: size[1], w: size[0], h: size[1], view: null, inkBox: null, top: 0, slot: 0, cssW: 0, cssH: 0, el: null, canvas: null, ink: null, links: null, task: null, renderedGen: -1, failed: false });
       }
     }
     const pos = await getPosition(key);
@@ -114,6 +117,7 @@ export class Viewer extends EventTarget {
     if (gen !== this.openGen) return;
     for (const p of pages) applyView(p, views.get(`${p.fileId}:${p.num}`));
     await this.ink.open(pages);
+    await this.marks.open(pages);
     if (gen !== this.openGen) return;
 
     this.key = key;
@@ -135,6 +139,7 @@ export class Viewer extends EventTarget {
     if (pos) this.#restore(pos.page, pos.frac);
     else this.scroller.scrollTop = 0;
     this.#updateVisible();
+    this.dispatchEvent(new Event('opened'));
   }
 
   // Switches between one page at a time (true) and scrolling, staying on the
@@ -202,8 +207,12 @@ export class Viewer extends EventTarget {
     this.#savePositionNow();
     this.cancelAnimation();
     this.ink.close();
+    this.marks.close();
     this.openGen++;
-    for (const p of this.pages) this.#release(p);
+    for (const p of this.pages) {
+      this.#release(p);
+      this.marks.hide(p);
+    }
     this.pages = [];
     this.want = [];
     this.drag = null;
@@ -248,10 +257,45 @@ export class Viewer extends EventTarget {
   }
 
   goToIndex(index) {
-    const p = this.pages[Math.max(0, Math.min(this.pages.length - 1, index))];
-    if (!p) return;
+    this.goTo(index, 0);
+  }
+
+  // Goes to y (0 to 1) of the way down page index; one page at a time, to
+  // the page.
+  goTo(index, y = 0) {
+    if (!this.pages.length) return;
     this.cancelAnimation();
-    this.scroller.scrollTop = this.paged ? p.slot : Math.max(0, p.top - PAD);
+    this.scroller.scrollTop = this.#scrollFor(index, y);
+  }
+
+  #scrollFor(index, y) {
+    const p = this.pages[Math.max(0, Math.min(this.pages.length - 1, index))];
+    if (!p) return 0;
+    if (this.paged) return p.slot;
+    const max = Math.max(0, this.scroller.scrollHeight - this.scroller.clientHeight);
+    return Math.max(0, Math.min(max, Math.round(p.top + (y || 0) * p.cssH - PAD)));
+  }
+
+  // Where the scroll bar is (0 to 1) when page index shows from y down.
+  fractionAt(index, y = 0) {
+    const sc = this.scroller;
+    return fractionOf(this.#scrollFor(index, y), sc.scrollHeight - sc.clientHeight);
+  }
+
+  // The page at the top of the screen, and how far down it the screen starts
+  // (0 to 1; 0 one page at a time).
+  // Measured below the margin goTo leaves, so going to a place and asking
+  // where the screen is gives the same place back.
+  topPlace() {
+    if (!this.pages.length) return [0, 0];
+    if (this.paged) return [this.#topPosition()[0], 0];
+    const y = this.scroller.scrollTop + PAD;
+    const index = this.#indexAt(y);
+    const p = this.pages[index];
+    // In the gap below a page: the next one starts the screen.
+    if (y >= p.top + p.cssH - 1 && index < this.pages.length - 1) return [index + 1, 0];
+    const frac = (y - p.top) / p.cssH;
+    return [index, frac < 0.005 ? 0 : Math.max(0, Math.min(1, frac))];
   }
 
   // Stops a running page turn where it is (a page turning like a book's
@@ -535,6 +579,7 @@ export class Viewer extends EventTarget {
       this.pagesEl.style.height = y - GAP + PAD + 'px';
     }
     this.layoutGen++;
+    this.dispatchEvent(new Event('layout'));
   }
 
   #place(p, left) {
@@ -552,6 +597,7 @@ export class Viewer extends EventTarget {
       p.inkBox = { width: p.cssW, height: p.cssH, transform: '' };
     }
     for (const svg of p.el.querySelectorAll('svg.ink')) placeLayer(svg, p);
+    this.marks.place(p);
   }
 
   #indexAt(y) {
@@ -634,8 +680,13 @@ export class Viewer extends EventTarget {
     for (const p of this.pages) {
       const keep = this.#inKeep(p);
       if ((p.canvas || p.task) && !keep) this.#release(p);
-      if (keep) this.ink.show(p);
-      else if (p.ink) this.ink.hide(p);
+      if (keep) {
+        this.ink.show(p);
+        this.marks.show(p);
+      } else {
+        if (p.ink) this.ink.hide(p);
+        if (p.links) this.marks.hide(p);
+      }
     }
 
     const cur = this.pageShowing();
@@ -776,7 +827,7 @@ export class Viewer extends EventTarget {
     sc.addEventListener('pointerdown', (e) => {
       // The Pencil writes notes, and so does a finger while the notes toolbar
       // says so; a hand resting while the Pencil writes doesn't move the music.
-      if (!e.isPrimary || (e.pointerType === 'pen' && this.ink.pencilWrites) || this.ink.takesFingers || (e.pointerType === 'mouse' && this.ink.toolbarOpen) || this.ink.penDown) {
+      if (!e.isPrimary || this.inputBlocked || (e.pointerType === 'pen' && this.ink.pencilWrites) || this.ink.takesFingers || (e.pointerType === 'mouse' && this.ink.toolbarOpen) || this.ink.penDown) {
         g = null;
         return;
       }
@@ -828,7 +879,7 @@ export class Viewer extends EventTarget {
       }
       if (!t.tap || performance.now() - t.t > 400 || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 12) return;
       const r = sc.getBoundingClientRect();
-      this.dispatchEvent(new CustomEvent('tap', { detail: { fy: (e.clientY - r.top) / r.height } }));
+      this.dispatchEvent(new CustomEvent('tap', { detail: { fy: (e.clientY - r.top) / r.height, x: e.clientX, y: e.clientY } }));
     });
     sc.addEventListener('pointercancel', (e) => {
       if (g && g.id === e.pointerId && g.flip) this.#letGo(g.flip, 0, true);

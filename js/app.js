@@ -6,6 +6,7 @@ import { AdjustUi } from './adjust-ui.js';
 import { WinkCamera } from './wink-camera.js';
 import { initSettings } from './settings-ui.js';
 import { initNotesUi } from './notes-ui.js';
+import { initIndexUi } from './index-ui.js';
 import { getFolders, scoresIn, setMember, FAVORITES } from './lists.js';
 import { describePdfError } from './pdfdoc.js';
 import { takeRedirectResult } from './gdrive-auth.js';
@@ -23,6 +24,7 @@ let library;
 let settingsUi;
 let sync;
 let notesUi;
+let indexUi;
 let scrubber = null;
 let adjustUi = null;
 let viewerActive = false;
@@ -69,6 +71,7 @@ function resumeLastView() {
 function showLibrary() {
   if (viewerActive) {
     notesUi.close();
+    indexUi.reset();
     viewer.ink.setHidden(false);
     viewer.close();
     viewerActive = false;
@@ -132,7 +135,7 @@ function showBar(autoHide = true) {
 
 function hideBar() {
   clearTimeout(barTimer);
-  if (settingsOpen || notesUi.isOpen) return;
+  if (settingsOpen || notesUi.isOpen || indexUi.isOpen) return;
   $('#viewer').classList.remove('bar-visible');
 }
 
@@ -200,6 +203,7 @@ function setupViewerControls() {
   });
   adjustUi = new AdjustUi(viewer, { onOpenChange: (open) => (open ? showBar(false) : showBar()) });
   $('#v-adjust').addEventListener('click', () => adjustUi.open());
+  $('#v-index').addEventListener('click', () => indexUi.open());
   $('#v-zoom-in').addEventListener('click', () => { viewer.zoomStep(1); showBar(); });
   $('#v-zoom-out').addEventListener('click', () => { viewer.zoomStep(-1); showBar(); });
   $('#v-wink').addEventListener('click', () => {
@@ -231,6 +235,8 @@ function setupViewerControls() {
   viewer.addEventListener('tap', (e) => {
     // With the markings tools open, fingers only scroll.
     if (notesUi.isOpen) return;
+    // A tap area on a printed index goes where it says.
+    if (indexUi.tapAt(e.detail.x, e.detail.y)) return;
     const fy = e.detail.fy;
     if (getSettings().tapToTurn && fy < 1 / 3) turn(-1, 'tap');
     else if (getSettings().tapToTurn && fy > 2 / 3) turn(1, 'tap');
@@ -257,6 +263,12 @@ function setupViewerControls() {
     if (!viewerActive || settingsOpen || document.querySelector('dialog[open]')) return;
     if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
     const k = e.key;
+    if (indexUi.linking) {
+      if (k === 'Escape') indexUi.stopLinking();
+      else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') viewer.goToIndex(viewer.pageShowing() - 1);
+      else if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown') viewer.goToIndex(viewer.pageShowing() + 1);
+      return;
+    }
     if (adjustUi.isOpen) {
       if (k === 'Escape') adjustUi.close();
       else if (k === 'ArrowLeft' || k === 'ArrowRight') adjustUi.step(k === 'ArrowLeft' ? -1 : 1);
@@ -436,6 +448,7 @@ async function main() {
   viewer = new Viewer($('#viewer'));
   applyTurnMode();
   notesUi = initNotesUi({ ink: viewer.ink, onOpenChange: (open) => (open ? showBar(false) : showBar()) });
+  indexUi = initIndexUi({ viewer, onOpenChange: (open) => (open ? showBar(false) : hideBar()) });
   setupWink();
   setupViewerControls();
   library = initLibrary({ onOpen: (id) => go(`#/file/${encodeURIComponent(id)}`) });

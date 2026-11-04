@@ -27,11 +27,80 @@ export function mergePage(a, b) {
   const out = { strokes: [...strokes.values()].sort(byTime), erased: [...erased].sort() };
   const view = mergeView(a && a.view, b && b.view);
   if (view) out.view = view;
+  const marks = mergeMarks(a && a.marks, b && b.marks);
+  if (marks.length) out.marks = marks;
   return out;
 }
 
 export function pageIsEmpty(p) {
-  return !p || (!(p.strokes && p.strokes.length) && !(p.erased && p.erased.length) && !p.view);
+  return !p || (!(p.strokes && p.strokes.length) && !(p.erased && p.erased.length) && !p.view && !(p.marks && p.marks.length));
+}
+
+// ---- Index marks ----
+//
+// A page's index marks (js/index-logic.js): where a hymn or a section
+// starts, and the tap areas drawn on a printed index. Each mark has an id
+// and when it was last changed (at); a change replaces the whole mark, and
+// the newer one wins. A deleted mark stays as { id, at, gone: true }, so the
+// delete reaches copies that still have it. On a tie, a delete wins, then
+// the same copy on every device.
+//   hymn     { kind: 'hymn', n: '245', title, y }
+//   section  { kind: 'section', title, y }
+//   link     { kind: 'link', box: [x, y, w, h], hymn: '245' } or { ..., page: 12 }
+// y is how far down the page it starts (0 to 1, of the page as it shows);
+// box is in the page's own units, as markings are (js/ink-draw.js).
+
+const MAX_TEXT = 200;
+const text = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT);
+const r4 = (n) => Math.round(n * 10000) / 10000;
+
+export function normMark(m) {
+  if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !m.id) return null;
+  const at = Number(m.at) || 0;
+  if (m.gone) return { id: m.id, at, gone: true };
+  const y = r4(Math.max(0, Math.min(1, Number(m.y) || 0)));
+  if (m.kind === 'hymn') {
+    const n = text(m.n);
+    return n ? { id: m.id, at, kind: 'hymn', n, title: text(m.title), y } : null;
+  }
+  if (m.kind === 'section') {
+    const title = text(m.title);
+    return title ? { id: m.id, at, kind: 'section', title, y } : null;
+  }
+  if (m.kind === 'link') {
+    const b = Array.isArray(m.box) && m.box.length === 4 && m.box.every((v) => typeof v === 'number' && Number.isFinite(v)) ? m.box : null;
+    if (!b || b[2] <= 0 || b[3] <= 0) return null;
+    const box = b.map((v) => Math.round(v * 10) / 10);
+    const hymn = text(m.hymn);
+    if (hymn) return { id: m.id, at, kind: 'link', box, hymn };
+    const page = Math.round(Number(m.page));
+    return page >= 1 ? { id: m.id, at, kind: 'link', box, page } : null;
+  }
+  return null;
+}
+
+function newerMark(a, b) {
+  if (a.at !== b.at) return a.at > b.at ? a : b;
+  if (!!a.gone !== !!b.gone) return a.gone ? a : b;
+  return JSON.stringify(a) >= JSON.stringify(b) ? a : b;
+}
+
+// Both copies' marks, by id: the newer change of each.
+export function mergeMarks(a, b) {
+  const out = new Map();
+  for (const raw of [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])]) {
+    const m = normMark(raw);
+    if (!m) continue;
+    const prev = out.get(m.id);
+    out.set(m.id, prev ? newerMark(prev, m) : m);
+  }
+  return [...out.values()].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+}
+
+// Stamps marks as changed just now (a backup restored with Replace), so
+// they win over older changes on other devices.
+export function restampMarks(marks, at) {
+  return mergeMarks(marks, null).map((m) => ({ ...m, at: Math.max(at, m.at + 1) }));
 }
 
 // A score's notes: { pages: { "<page>": page } }.

@@ -223,6 +223,8 @@ export async function removeFile(id, tomb = null) {
       }
     };
     if (tomb) s.kv.put(tomb, `sync:tomb:${id}`);
+    // What its pages say (js/ocr.js).
+    s.kv.delete(IDBKeyRange.bound(`ocr:${id}:`, `ocr:${id}:\uffff`));
   });
 }
 
