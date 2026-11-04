@@ -115,6 +115,38 @@ export function shownToPage(view, W, H, x, y) {
   return [a * dx + b * dy, c * dx + d * dy];
 }
 
+// ---- Keeping the frame's shape ----
+
+// A crop rectangle [x, y, w, h] (fractions of the page as shown) changed to
+// shape rf: its width ÷ height in fractions (the shape wanted ÷ the shape of
+// the page as shown). kind says what was dragged (js/adjust-ui.js), which
+// sets what stays put: dragging the top edge keeps the bottom, a corner
+// keeps the opposite corner; 'center' (after Trim margins, or a new shape)
+// keeps the middle. Dragging an edge sets the size from that edge; otherwise
+// the frame grows to take in all of rect, unless the page isn't big enough,
+// when it's as big as fits.
+export function withShape(rect, rf, kind = 'center') {
+  let [x, y, w, h] = rect;
+  if (!(rf > 0)) return rect;
+  const right = x + w;
+  const bottom = y + h;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  if (kind === 'n' || kind === 's') w = h * rf;
+  else if (kind === 'e' || kind === 'w') h = w / rf;
+  else if (w / h > rf) h = w / rf;
+  else w = h * rf;
+  // As big as fits on the page, and not smaller than a frame can be.
+  if (w > 1) { w = 1; h = w / rf; }
+  if (h > 1) { h = 1; w = h * rf; }
+  const least = Math.max(MIN_CROP / w, MIN_CROP / h, 1);
+  if (least > 1 && w * least <= 1 && h * least <= 1) { w *= least; h *= least; }
+  const side = /^[nsew]{1,2}$/.test(kind) ? kind : ''; // 'center' keeps the middle
+  x = side.includes('w') ? right - w : side.includes('e') ? x : cx - w / 2;
+  y = side.includes('n') ? bottom - h : side.includes('s') ? y : cy - h / 2;
+  return [clamp(x, 0, 1 - w), clamp(y, 0, 1 - h), w, h];
+}
+
 // ---- Trimming the margins ----
 
 // The part of a page with music on it, from its pixels: lum is one byte per

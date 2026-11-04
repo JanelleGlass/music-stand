@@ -97,6 +97,12 @@ will show.
   shadow along the edge, but check a page with faint marks (page numbers,
   tempo markings) near the edge, and widen the frame if it cut them.
 - **Whole page** takes the crop away.
+- **Shape** keeps the frame's proportions while you drag it and when you trim
+  margins: *Free* (any shape), *Page* (the page's own shape, so the music
+  just gets bigger), or *Screen* (the shape of the screen held the way it is
+  now, so one page at a time the page fills it with no dark bands). The
+  frame grows round the music to that shape. The choice is remembered on
+  this device.
 - ‹ › (or the arrow keys) go through the pages; each keeps what you did to it.
 - **Apply to** *This page*, *All*, *Odd* or *Even* (by the page's number in
   the PDF) says which pages Done changes. After Trim margins, each of those
