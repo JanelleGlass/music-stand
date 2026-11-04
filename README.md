@@ -116,9 +116,26 @@ including scanned ones.
 The index is kept with the score's markings: it syncs through Google Drive
 and goes into backups the same way.
 
-Searching the words of the music itself (lyrics) isn't possible yet: in a
-scanned PDF the words are pictures, not text, and would first have to be
-read with text recognition (OCR).
+### Reading scanned pages (text recognition)
+
+In a scanned PDF the words are pictures, so Music Stand reads them with
+text recognition (OCR), on the iPad itself:
+
+- **Read the printed index**: *Paste titles* › *Read pages* (say pages 3
+  to 6, where the book's index is) reads the index and puts the hymns it
+  finds in the list, number and title. Check the list, fix what was misread
+  (text recognition mixes up some letters and numbers), then *Set titles*.
+  An index in two columns works too.
+- **Search the words of the music**: *Read all pages* reads every page once
+  (it can take a while for a whole hymnal: a few seconds a page; you can
+  keep reading the music meanwhile, and it carries on where it stopped).
+  Then searching finds the pages with those words, lyrics included, even
+  when they're printed in syllables ("A - maz - ing"), under *Words on the
+  pages*.
+- The first use downloads text recognition (about 11 MB), so do it once
+  while online; after that it works offline. What the pages say is kept on
+  this device only (it isn't synced or backed up, and reading again is
+  quick to redo).
 
 ## Adjusting pages: crop, turn and straighten
 
@@ -333,7 +350,8 @@ js/paging.js                 one page at a time: page fitting, swipes, how far a
 js/scrubber.js, js/scrub.js  the scroll bar down the right edge (its arithmetic is unit tested)
 js/index-ui.js               the Index panel, and drawing tap areas on a printed index
 js/marks.js                  the open score's index marks: saving, tap-area layers
-js/index-logic.js            index rules: search, ordering, scroll bar labels, pasted lists (unit tested)
+js/index-logic.js            index rules: search, ordering, scroll bar labels, pasted lists, page words (unit tested)
+js/ocr.js                    text recognition of scanned pages (Tesseract.js), and the text kept per page
 js/page-view.js              page adjustments: crop, turn and straighten geometry, finding the music and the staff lines' angle (unit tested)
 js/adjust-ui.js              the Adjust pages screen
 js/views-store.js            saving page adjustments, with the page's markings
@@ -358,7 +376,7 @@ js/sync-engine.js            carries out one sync through two adapters (unit tes
 js/sync-local.js, sync-remote.js  the adapters: IndexedDB library, Google Drive
 js/sync.js, js/sync-ui.js    when sync runs, its sign-in, Settings section and cloud button
 sw.js, manifest.webmanifest  offline + Home Screen install
-vendor/                      PDF.js 4.10.38 (legacy build), MediaPipe tasks-vision 0.10.21, face model
+vendor/                      PDF.js 4.10.38 (legacy build), MediaPipe tasks-vision 0.10.21, face model, Tesseract.js 6.0.1 (core 6.0.0, English data 4.0.0_best_int)
 tests/                       node --test tests/*.test.mjs (fake Drive and devices for sync)
 ```
 
@@ -372,5 +390,8 @@ caches files, so after editing, bump `VERSION` or clear site data in the browser
 ## Third-party code
 
 - [PDF.js](https://github.com/mozilla/pdf.js), Apache License 2.0 (`vendor/pdfjs/LICENSE`)
+- [Tesseract.js](https://github.com/naptha/tesseract.js) and tesseract.js-core,
+  Apache License 2.0 (`vendor/tesseract/LICENSE`, `vendor/tesseract/LICENSE-core`),
+  with the English model from [tessdata](https://github.com/tesseract-ocr/tessdata_best), Apache License 2.0
 - [MediaPipe Tasks Vision](https://github.com/google-ai-edge/mediapipe) and the
   Face Landmarker model, Apache License 2.0

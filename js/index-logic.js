@@ -106,25 +106,43 @@ export function pickLabels(items, gap) {
 
 // A list of hymns typed or pasted, one per line, as a printed index has
 // them: "245 Amazing Grace", "245. Amazing grace", or "Amazing Grace ....
-// 245". Returns [{ n, title }] (lines without a number are left out).
+// 245". A line can hold more than one (an index in two columns, read by
+// text recognition, comes a row at a time). Returns [{ n, title }]; lines
+// without a number are left out.
+const NUM = String.raw`\d{1,4}[a-z]?`;
+const LEADERS = new RegExp(String.raw`(\p{L}[^\d]*?)(?:\s*[.·…•,_]){3,}\s*(${NUM})(?![\p{L}\d])`, 'giu');
+const NUMBER_FIRST = new RegExp(String.raw`(?:^|\s)(${NUM})[.:)\]]?\s*[–—-]?\s+(\p{L}.*?)(?=\s${NUM}[.:)\]]?\s*[–—-]?\s+\p{L}|$)`, 'giu');
+const TITLE_FIRST = new RegExp(String.raw`^(.*?\p{L}.*?)[\s.·…•,_–—-]+(${NUM})$`, 'iu');
+
 export function parseTitleList(textIn) {
   const out = [];
+  const push = (n, title) => {
+    const t = cleanTitle(title);
+    if (t && /\p{L}/u.test(t)) out.push({ n: n.toLowerCase(), title: t });
+  };
   for (const raw of String(textIn || '').split(/\r?\n/)) {
     const line = raw.replace(/\s+/g, ' ').trim();
     if (!line) continue;
-    let m = /^(\d{1,4}[a-z]?)\b[\s.:)\]–—-]*(.+)$/i.exec(line);
-    if (m && /\p{L}/u.test(m[2])) {
-      out.push({ n: m[1].toLowerCase(), title: cleanTitle(m[2]) });
+    const led = [...line.matchAll(LEADERS)];
+    if (led.length) {
+      for (const m of led) push(m[2], m[1]);
       continue;
     }
-    m = /^(.*?\p{L}.*?)[\s.·…–—-]+(\d{1,4}[a-z]?)$/iu.exec(line);
-    if (m) out.push({ n: m[2].toLowerCase(), title: cleanTitle(m[1]) });
+    if (/^\d/.test(line)) {
+      const first = [...line.matchAll(NUMBER_FIRST)];
+      if (first.length) {
+        for (const m of first) push(m[1], m[2]);
+        continue;
+      }
+    }
+    const m = TITLE_FIRST.exec(line);
+    if (m) push(m[2], m[1]);
   }
-  return out.filter((e) => e.title);
+  return out;
 }
 
 function cleanTitle(s) {
-  return s.replace(/[\s.·…]+$/, '').replace(/^[\s.:)\]–—-]+/, '').trim();
+  return s.replace(/[\s.·…•,_–—-]+$/, '').replace(/^[\s.:)\]–—-]+/, '').trim();
 }
 
 // Hymns from..to, the first on page firstPage and each perPage pages after
@@ -158,4 +176,49 @@ export function linkAt(links, u, v, pad = 0) {
 // The rectangle between two corners, as [x, y, w, h].
 export function boxBetween(x0, y0, x1, y1) {
   return [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)];
+}
+
+// ---- The words on the pages (read by text recognition, js/ocr.js) ----
+
+// Words as a hymn prints them under the notes are split into syllables
+// ("A - maz - ing grace"); joined back up, they can be searched.
+export function joinSyllables(text) {
+  return String(text || '')
+    .replace(/(\p{L})[ \t]*[-–][ \t]+(?=\p{L})/gu, '$1')
+    .replace(/(\p{L})[ \t]+[-–](?=\p{L})/gu, '$1')
+    .replace(/(\p{L})-\r?\n\s*(?=\p{Ll})/gu, '$1');
+}
+
+// Bits of staff lines and notes that text recognition reads as letters
+// ("—_——", "Ee", "TT"): left out of what a match shows.
+const SHORT_WORDS = new Set(['TO', 'OF', 'IN', 'MY', 'BE', 'ON', 'IS', 'IT', 'AT', 'BY', 'HE', 'WE', 'US', 'SO', 'NO', 'GO', 'DO', 'ME', 'AN', 'AS', 'OR', 'UP', 'A', 'I', 'O']);
+function isJunk(t) {
+  const core = t.replace(/^[^\p{L}\d]+|[^\p{L}\d]+$/gu, '');
+  if (!core) return true;
+  if (/^[A-Z]{1,2}$/.test(core)) return !SHORT_WORDS.has(core);
+  return /^[Ee]e+$/.test(core) || /^[EeIi]{2,}$/.test(core);
+}
+
+// Pages whose words hold every word searched for (each word may be the
+// start of one on the page). pages: [{ index, num, text }]. Returns
+// [{ index, num, snippet }] in page order, snippet being the words round
+// the first match.
+export function searchPages(pages, query, { around = 5 } = {}) {
+  const words = fold(query).split(' ').filter((w) => w.length >= 2);
+  if (!words.length) return [];
+  const out = [];
+  for (const p of pages) {
+    const tokens = joinSyllables(p.text).split(/\s+/).filter(Boolean);
+    const folded = tokens.map((t) => fold(t).replace(/\s+/g, ''));
+    const has = (w) => folded.findIndex((t) => t.startsWith(w));
+    const at = words.map(has);
+    if (at.some((i) => i < 0)) continue;
+    const first = Math.min(...at);
+    const from = Math.max(0, first - around);
+    const to = Math.min(tokens.length, first + around * 2);
+    const words2 = tokens.slice(from, to).filter((t, i) => from + i === first || !isJunk(t));
+    const snippet = `${from > 0 ? '… ' : ''}${words2.join(' ')}${to < tokens.length ? ' …' : ''}`;
+    out.push({ index: p.index, num: p.num, snippet });
+  }
+  return out.sort((a, b) => a.index - b.index);
 }

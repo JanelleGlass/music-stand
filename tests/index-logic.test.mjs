@@ -179,3 +179,50 @@ test('marks travel in the Google Drive file and come back the same', async () =>
   const back = parse(serialize(doc)).doc;
   assert.deepEqual(back.notes.abc['3'].marks, mergeMarks(marks, null));
 });
+
+// ---- Words read from the pages ----
+import { joinSyllables, searchPages } from '../js/index-logic.js';
+
+test('words split into syllables under the notes are joined back up', () => {
+  assert.equal(joinSyllables('A - maz - ing grace, how sweet the sound'), 'Amazing grace, how sweet the sound');
+  assert.equal(joinSyllables('Hal- le- lu- jah'), 'Hallelujah');
+  assert.equal(joinSyllables('re -joice'), 'rejoice');
+  assert.equal(joinSyllables('well-known 1 - 3'), 'well-known 1 - 3');
+});
+
+test('pages are found by the words on them, with the words round the match', () => {
+  const pages = [
+    { index: 0, num: 1, text: 'Index\n1 Amazing Grace\n2 Abide with Me' },
+    { index: 5, num: 6, text: '245 Amazing Grace\nA - maz - ing grace, how sweet the sound that saved a wretch like me' },
+    { index: 7, num: 8, text: 'Silent night, holy night' },
+  ];
+  assert.deepEqual(searchPages(pages, 'wretch saved').map((p) => p.num), [6]);
+  assert.deepEqual(searchPages(pages, 'amazing').map((p) => p.num), [1, 6]);
+  assert.deepEqual(searchPages(pages, 'HOLY'), [{ index: 7, num: 8, snippet: 'Silent night, holy night' }]);
+  assert.match(searchPages(pages, 'wretch')[0].snippet, /^… .*wretch like me$/);
+  assert.deepEqual(searchPages(pages, 'x'), []);
+  assert.deepEqual(searchPages(pages, 'nowhere'), []);
+});
+
+test('an index read by text recognition still gives numbers and titles', () => {
+  assert.deepEqual(parseTitleList('Abide with Me ______ 10\nBe Thou My Vision • • • 451\nCome, Thou Fount,,, 12'), [
+    { n: '10', title: 'Abide with Me' },
+    { n: '451', title: 'Be Thou My Vision' },
+    { n: '12', title: 'Come, Thou Fount' },
+  ]);
+});
+
+test('an index in two columns, read a row at a time, gives each hymn', () => {
+  assert.deepEqual(parseTitleList('Amazing Grace .................... 1 Holy, Holy, Holy .................. 5\nCome Thou Fount ...................4 Rockoff Ages. cin\n1 Abide with Me 2 Be Still, My Soul'), [
+    { n: '1', title: 'Amazing Grace' },
+    { n: '5', title: 'Holy, Holy, Holy' },
+    { n: '4', title: 'Come Thou Fount' },
+    { n: '1', title: 'Abide with Me' },
+    { n: '2', title: 'Be Still, My Soul' },
+  ]);
+});
+
+test('a match leaves out what staff lines were read as', () => {
+  const [hit] = searchPages([{ index: 1, num: 2, text: 'I _— that saved a wretch like me! Ee TT I a SE —_—— ee' }], 'wretch');
+  assert.equal(hit.snippet, 'I that saved a wretch like me! I a');
+});

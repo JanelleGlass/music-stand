@@ -698,3 +698,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 .ix-field span { display: block; font-size: 14px; color: var(--muted); }
 .ix-field .field { margin-top: 4px; }
 textarea.ix-text { min-height: 180px; padding: 10px 12px; font-size: 16px; resize: vertical; }
+.ix-reading { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
+.ix-head { margin: 18px 4px 4px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.ix-row.words .ix-snippet { white-space: normal; font-size: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ix-ocr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 15px; }
+.ix-ocr .field { width: 84px; min-height: 40px; margin: 0; font-size: 16px; }
+.ix-ocr-note { margin-top: 8px !important; font-size: 14px; }

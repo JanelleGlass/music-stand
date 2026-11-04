@@ -4,7 +4,8 @@
 // index page, each going to a hymn or a page. The marks are kept by
 // js/marks.js; js/index-logic.js has the rules.
 import { $, esc, icon, toast, openModal, confirmDialog, actionSheet } from './ui.js';
-import { sortEntries, searchEntries, findHymn, nextNumber, entryAt, parseTitleList, hymnRun, boxBetween, compareNumbers } from './index-logic.js';
+import { sortEntries, searchEntries, findHymn, nextNumber, entryAt, parseTitleList, hymnRun, boxBetween, compareNumbers, searchPages } from './index-logic.js';
+import { readPage, savedTexts, saveText, release as releaseOcr } from './ocr.js';
 
 const MIN_BOX_PX = 14; // a drag smaller than this either way isn't a tap area
 const RETURN_MS = 12000; // how long "Back" shows after following a tap area
@@ -18,6 +19,8 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
   let linking = null; // drawing tap areas: { draw, onDown, ... }
   let returnTo = null;
   let returnTimer = 0;
+  let texts = null; // { key, byNum: Map page → text } of the open score
+  let reading = null; // reading every page: { key, done, total, stop }
 
   const entries = () => marks.entries();
   const pageCount = () => viewer.pages.length;
@@ -31,7 +34,23 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     render();
     sheet.showModal();
     onOpenChange(true);
+    loadTexts().then(() => { if (sheet.open) render(); });
   }
+
+  // What the pages of the open score say, as read before.
+  async function loadTexts() {
+    const k = viewer.key;
+    if (texts && texts.key === k) return texts;
+    const byNum = new Map();
+    for (const fileId of new Set(viewer.pages.map((p) => p.fileId))) {
+      for (const [num, text] of await savedTexts(fileId)) byNum.set(`${fileId}:${num}`, text);
+    }
+    if (viewer.key !== k) return null;
+    texts = { key: k, byNum };
+    return texts;
+  }
+
+  const textOf = (p) => (texts && texts.key === viewer.key ? texts.byNum.get(`${p.fileId}:${p.num}`) : undefined);
 
   function close() {
     if (sheet.open) sheet.close();
@@ -47,6 +66,22 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     const hymns = all.filter((e) => e.kind === 'hymn').length;
     const sections = all.length - hymns;
     $('#ix-count').textContent = all.length ? [hymns && `${hymns} hymn${hymns === 1 ? '' : 's'}`, sections && `${sections} section${sections === 1 ? '' : 's'}`].filter(Boolean).join(', ') : '';
+    renderReading();
+    const read = viewer.pages.map((p, index) => ({ index, num: p.num, text: textOf(p) })).filter((p) => p.text);
+    const pageHits = q ? searchPages(read, q) : [];
+    const words = pageHits.length
+      ? `<h3 class="ix-head">Words on the pages</h3>` + pageHits.slice(0, 200).map((h) => `<div class="ix-row words" data-index="${h.index}">
+          <button type="button" class="ix-go"><span class="ix-title ix-snippet">${esc(h.snippet)}</span><span class="ix-page">p. ${h.num}</span></button>
+        </div>`).join('')
+      : '';
+    if (q && !shown.length && words) {
+      list.innerHTML = words;
+      return;
+    }
+    if (q && !shown.length && read.length) {
+      list.innerHTML = `<div class="ix-empty"><p>Nothing in the index or on the ${read.length} page${read.length === 1 ? '' : 's'} read matches “${esc(q)}”.</p></div>`;
+      return;
+    }
     if (!all.length) {
       list.innerHTML = `<div class="ix-empty">
         <p><b>Make an index for this score.</b></p>
@@ -67,20 +102,53 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
         <button type="button" class="ix-go">${main}<span class="ix-page">p. ${e.num}</span></button>
         <button type="button" class="icon-btn ix-edit" aria-label="Change">${icon('pen')}</button>
       </div>`;
-    }).join('');
+    }).join('') + words;
   }
 
+  // How reading the pages is going, under the buttons.
+  function renderReading() {
+    const el = $('#ix-reading');
+    const b = $('#ix-read-all');
+    const n = viewer.pages.length;
+    const done = texts && texts.key === viewer.key ? viewer.pages.filter((p) => textOf(p) !== undefined).length : 0;
+    if (reading && reading.key === viewer.key) {
+      el.hidden = false;
+      el.textContent = reading.status || `Reading the pages: ${done} of ${n}. You can keep reading the music meanwhile.`;
+      b.textContent = 'Stop reading';
+    } else {
+      el.hidden = !done;
+      el.textContent = done ? (done >= n ? `All ${n} pages have been read: search finds the words on them.` : `${done} of ${n} pages have been read. Read all pages carries on where it stopped.`) : '';
+      b.textContent = done && done < n ? 'Read the rest' : 'Read all pages';
+      b.hidden = done >= n;
+    }
+  }
   search.addEventListener('input', render);
   search.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const first = searchEntries(entries(), search.value)[0];
-    if (first) goToEntry(first);
+    if (first) {
+      goToEntry(first);
+      return;
+    }
+    const read = viewer.pages.map((p, index) => ({ index, num: p.num, text: textOf(p) })).filter((p) => p.text);
+    const hit = searchPages(read, search.value)[0];
+    if (hit) {
+      close();
+      search.blur();
+      viewer.goTo(hit.index, 0);
+    }
   });
 
   list.addEventListener('click', (e) => {
     const row = e.target.closest('.ix-row');
     if (!row) return;
+    if (row.classList.contains('words')) {
+      close();
+      search.blur();
+      viewer.goTo(+row.dataset.index, 0);
+      return;
+    }
     const entry = entries().find((x) => x.id === row.dataset.id);
     if (!entry) return;
     if (e.target.closest('.ix-edit')) editEntry(entry);
@@ -219,18 +287,57 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
 
   // Titles for the hymns in the index, from a list typed or pasted.
   $('#ix-paste').addEventListener('click', async () => {
+    const cur = viewer.pages[Math.max(0, viewer.pageShowing())].num;
     const value = await openModal((dlg, finish) => {
       dlg.innerHTML = `
         <form class="modal-body" method="dialog">
           <h2>Paste titles</h2>
           <p>One hymn a line, with its number first or last, as in the book’s index:<br>245 Amazing Grace<br>Abide with Me ...... 10</p>
-          <textarea class="field ix-text" rows="9" autocapitalize="off" spellcheck="false" autofocus></textarea>
+          <textarea class="field ix-text" rows="9" autocapitalize="off" spellcheck="false"></textarea>
+          <div class="ix-ocr">
+            <span>Or read the printed index: pages</span>
+            <input class="field" name="from" type="number" inputmode="numeric" min="1" max="${pageCount()}" value="${cur}">
+            <span>to</span>
+            <input class="field" name="to" type="number" inputmode="numeric" min="1" max="${pageCount()}" value="${cur}">
+            <button type="button" class="btn small" data-read>Read pages</button>
+          </div>
+          <p class="ix-ocr-note" data-note>The list it finds goes in the box above. Check it, fix any misread numbers, then tap Set titles.</p>
         </form>
         <div class="modal-actions">
           <button class="btn" data-v="0">Cancel</button>
           <button class="btn primary" data-v="1">Set titles</button>
         </div>`;
       const ta = dlg.querySelector('textarea');
+      const note = dlg.querySelector('[data-note]');
+      const readBtn = dlg.querySelector('[data-read]');
+      let busy = false;
+      readBtn.onclick = async () => {
+        if (busy) return;
+        const a = clampPage(dlg.querySelector('[name=from]').value, cur);
+        const b = Math.max(a, clampPage(dlg.querySelector('[name=to]').value, a));
+        busy = true;
+        readBtn.disabled = true;
+        let found = 0;
+        try {
+          for (let num = a; num <= b; num++) {
+            if (!dlg.open) return;
+            note.textContent = `Reading page ${num}${b > a ? ` (${num - a + 1} of ${b - a + 1})` : ''}…`;
+            const text = await readPage(viewer, indexOfNum(num), { onLoading: (m) => loadingNote(note, m) });
+            const lines = parseTitleList(text);
+            found += lines.length;
+            if (lines.length) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + lines.map((l) => `${l.n} ${l.title}`).join('\n');
+          }
+          note.textContent = found
+            ? `Found ${found} hymn${found === 1 ? '' : 's'}. Check the list above (text recognition misreads some letters and numbers), then tap Set titles.`
+            : 'No lines with a hymn number were found on those pages. Is it the index? A clearer scan, or cropping the page with Adjust pages, can help.';
+        } catch (e) {
+          console.warn(e);
+          note.textContent = `Reading didn’t work: ${(e && e.message) || e}. Text recognition has to be downloaded once (about 11 MB) while online.`;
+        } finally {
+          busy = false;
+          readBtn.disabled = false;
+        }
+      };
       dlg.querySelector('[data-v="0"]').onclick = () => finish(null);
       dlg.querySelector('[data-v="1"]').onclick = () => finish(ta.value);
     });
@@ -257,6 +364,60 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     const msg = `${set} title${set === 1 ? '' : 's'} set.` + (ms.length ? ` ${ms.length} number${ms.length === 1 ? ' isn’t' : 's aren’t'} in the index yet (${ms.slice(0, 6).join(', ')}${ms.length > 6 ? '…' : ''}). Add those hymns first, then paste again.` : '');
     await confirmDialog({ title: 'Titles', message: msg, ok: 'OK', cancel: 'Close' });
   });
+
+  // ---- Reading every page, so its words can be searched ----
+
+  $('#ix-read-all').addEventListener('click', async () => {
+    if (reading && reading.key === viewer.key) {
+      reading.stop = true;
+      reading.status = 'Stopping…';
+      renderReading();
+      return;
+    }
+    await loadTexts();
+    readAll();
+  });
+
+  async function readAll() {
+    const job = { key: viewer.key, stop: false, status: '' };
+    reading = job;
+    renderReading();
+    const live = () => !job.stop && viewer.key === job.key && viewer.isOpen;
+    let failed = null;
+    let count = 0;
+    try {
+      for (let i = 0; i < viewer.pages.length && live(); i++) {
+        const p = viewer.pages[i];
+        if (textOf(p) !== undefined) continue;
+        // Not while a page turns or the Pencil writes: they come first.
+        while (live() && (viewer.animating || viewer.ink.busy)) await new Promise((r) => setTimeout(r, 300));
+        if (!live()) break;
+        const text = await readPage(viewer, i, {
+          onLoading: (m) => {
+            if (/load|initializ/i.test(m.status) && m.progress < 1) {
+              job.status = `Getting text recognition ready (${Math.round((m.progress || 0) * 100)}%)… The first time, this downloads about 11 MB.`;
+              if (sheet.open) renderReading();
+            }
+          },
+        });
+        if (viewer.key !== job.key) break;
+        await saveText(p.fileId, p.num, text);
+        texts.byNum.set(`${p.fileId}:${p.num}`, text);
+        count++;
+        job.status = '';
+        if (sheet.open) (search.value.trim() ? render() : renderReading());
+      }
+    } catch (e) {
+      console.warn(e);
+      failed = e;
+    }
+    if (reading === job) reading = null;
+    releaseOcr();
+    if (viewer.key !== job.key) return;
+    if (sheet.open) render();
+    if (failed) toast(`Reading the pages stopped: ${(failed && failed.message) || failed}. It needs to download text recognition once while online.`, 5000);
+    else if (!job.stop && count) toast('All pages have been read. Search the Index for any words on them.', 3200);
+  }
 
   // ---- Following a tap area ----
 
@@ -461,6 +622,9 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     stopLinking();
     hideReturn();
     close();
+    if (reading) reading.stop = true;
+    texts = null;
+    releaseOcr(true);
   }
 
   return {
@@ -476,6 +640,11 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     hasHymns: () => entries().some((e) => e.kind === 'hymn'),
     entryAt: (index, y) => entryAt(entries(), index, y),
   };
+}
+
+// Shows how getting text recognition ready is going.
+function loadingNote(el, m) {
+  if (/load|initializ/i.test(m.status) && m.progress < 1) el.textContent = `Getting text recognition ready (${Math.round((m.progress || 0) * 100)}%)… The first time, this downloads about 11 MB.`;
 }
 
 // A small form in a modal. fields: [{ name, label, value, type, placeholder,
