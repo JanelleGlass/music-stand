@@ -627,3 +627,74 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
   .adjust-row .btn .ico { display: none; }
   .adjust-row .seg button { padding: 0 9px; }
 }
+
+/* ---------- Index (js/index-ui.js, js/marks.js) ---------- */
+/* Tap areas on a printed index, sized and turned like the markings layers. */
+.page svg.links { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; overflow: visible; z-index: 4; }
+.page svg.links rect { fill: rgba(232, 146, 60, 0.1); stroke: rgba(205, 120, 40, 0.45); stroke-width: 1; vector-effect: non-scaling-stroke; }
+#viewer.linking .page svg.links rect { fill: rgba(232, 146, 60, 0.24); stroke: var(--accent); stroke-width: 2; }
+
+#viewer.linking .vbar, #viewer.linking .scrub, #viewer.linking .pagepill { display: none; }
+#viewer.linking .scroller { touch-action: none; }
+.links-bar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 11;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: calc(env(safe-area-inset-top) + 6px) max(10px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));
+  background: var(--bar); color: var(--bar-text);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
+.links-bar p { flex: 1; min-width: 220px; margin: 0; font-size: 15px; }
+.links-nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.links-nav span { min-width: 76px; text-align: center; font-variant-numeric: tabular-nums; }
+.link-draft {
+  position: absolute; z-index: 8; pointer-events: none;
+  border: 2px dashed var(--accent); border-radius: 4px; background: rgba(232, 146, 60, 0.18);
+}
+
+.return-chip {
+  position: absolute; z-index: 6; left: 50%; transform: translateX(-50%);
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 16px 0 10px;
+  border: 0; border-radius: 20px; background: rgba(20, 22, 26, 0.85); color: #f1efea; font-weight: 600; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.return-chip .ico { width: 18px; height: 18px; }
+
+/* Sections and hymn numbers along the scroll bar. */
+.scrub-marks { position: absolute; right: 30px; top: 0; bottom: 0; width: 0; transition: opacity 0.2s; }
+.scrub.dragging .scrub-marks { opacity: 0.2; pointer-events: none; }
+.scrub-mark {
+  position: absolute; right: 0; transform: translateY(-50%);
+  max-width: 180px; min-height: 26px; padding: 2px 9px; border: 0; border-radius: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: rgba(20, 22, 26, 0.78); color: #f1efea; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.scrub-mark.section { background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 14px; }
+
+/* The Index panel. */
+.sheet-head h2 small { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 6px; }
+.ix-top { padding: 12px max(16px, env(safe-area-inset-right)) 10px 16px; border-bottom: 1px solid var(--line); }
+.ix-search { width: 100%; }
+.ix-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ix-list { padding-top: 0; }
+.ix-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.ix-go {
+  flex: 1; min-width: 0; min-height: 50px; display: flex; align-items: center; gap: 12px;
+  padding: 6px 4px; border: 0; background: transparent; text-align: left; cursor: pointer;
+}
+.ix-n { flex: none; min-width: 3.2em; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ix-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ix-title i { color: var(--muted); }
+.ix-page { flex: none; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.ix-edit { color: var(--muted); }
+.ix-edit .ico { width: 18px; height: 18px; }
+.ix-row.section .ix-go { font-weight: 700; color: var(--accent); padding-top: 14px; }
+.ix-empty { color: var(--muted); padding: 18px 4px; }
+.ix-empty p { margin: 0 0 10px; }
+.ix-empty b { color: var(--text); }
+.ix-form p { margin-bottom: 4px; }
+.ix-field { display: block; margin-top: 10px; }
+.ix-field span { display: block; font-size: 14px; color: var(--muted); }
+.ix-field .field { margin-top: 4px; }
+textarea.ix-text { min-height: 180px; padding: 10px 12px; font-size: 16px; resize: vertical; }

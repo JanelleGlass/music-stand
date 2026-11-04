@@ -31,6 +31,7 @@ const ICONS = {
   crop: '<path d="M6 2.5V18h15.5"/><path d="M2.5 6H18v15.5"/>',
   'turn-left': '<path d="M4 4v5h5"/><path d="M4.6 14a8 8 0 1 0 1.9-8.3L4 9"/>',
   'turn-right': '<path d="M20 4v5h-5"/><path d="M19.4 14a8 8 0 1 1-1.9-8.3L20 9"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>',
   scroll: '<rect x="3.5" y="3" width="11" height="18" rx="1.8"/><path d="M19.5 5.5v13M17.3 7.7l2.2-2.2 2.2 2.2M17.3 16.3l2.2 2.2 2.2-2.2"/>',
 };
 

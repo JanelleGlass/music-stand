@@ -84,6 +84,42 @@ while you scroll by hand, and stays out of the way otherwise.
 - It hides while the markings tools are open (so you can write near the
   right edge), and when the whole score fits on the screen.
 
+## Index: hymns, sections and tap areas
+
+The **list button** next to the page number in a score's top bar opens the
+score's *Index*: where its hymns and sections start. It's made for hymnals,
+including scanned ones.
+
+- **Hymn here** adds the hymn that starts at the top of the screen (it
+  suggests the number after the hymn before it). **Section here** adds a
+  part of the book, such as Advent or Communion.
+- **Add many** adds a whole run at once: for example hymns 1 to 600, the
+  first on page 12, one every page (or every 2 pages). Hymns already in the
+  index stay where they are; move any that land wrong with the pencil
+  button beside them.
+- **Paste titles** sets titles from a list with one hymn per line, number
+  first or last, as a printed index has them (`245 Amazing Grace`,
+  `Abide with Me .... 10`). Type the list, or copy one from a website.
+- **Search** by hymn number (`245`, then Return goes straight there) or by
+  any words of a title (`grace amazing`), ignoring case, accents and
+  punctuation. Tap a row to go to it.
+- The **scroll bar** shows the sections and hymn numbers, as many as fit
+  down the screen; tap one to go there. While you drag the handle, its label
+  names the hymn you'll land on.
+- **Tap areas** make a scanned index page clickable. Go to the index page,
+  tap *Tap areas*, and drag across a line (say *245 Amazing Grace*). Then
+  type the hymn number it goes to (or a page). Tapping that line while
+  reading then goes to the hymn, and a **Back** button shows for a few
+  seconds to return to the index. Tap an area while drawing to change or
+  delete it. ‹ › go through the pages while drawing.
+
+The index is kept with the score's markings: it syncs through Google Drive
+and goes into backups the same way.
+
+Searching the words of the music itself (lyrics) isn't possible yet: in a
+scanned PDF the words are pictures, not text, and would first have to be
+read with text recognition (OCR).
+
 ## Adjusting pages: crop, turn and straighten
 
 The **crop button** in a score's top bar opens *Adjust pages* for the page
@@ -181,7 +217,7 @@ account:
 - If many scores disappear from Drive at once (for example the Music Stand
   folder went to the trash), nothing is deleted on the iPad until you choose,
   from the **Review** strip, to keep them or delete them.
-- **Markings, page adjustments, zoom, favorites and folders** sync too, in one small file in the
+- **Markings, page adjustments, the index, zoom, favorites and folders** sync too, in one small file in the
   Music Stand folder ("Music Stand notes and folders.json"; leave it as it
   is). A score is recognised by its PDF, so markings and folders come back if
   a deleted score is restored from the Drive trash. Strokes written on two
@@ -295,6 +331,9 @@ js/app.js                    startup, routing, wink → page turn, keys, wake lo
 js/viewer.js                 PDF viewer: scrolling or one page at a time (lazy rendering, animated turns, swipes)
 js/paging.js                 one page at a time: page fitting, swipes, how far a page has turned (unit tested)
 js/scrubber.js, js/scrub.js  the scroll bar down the right edge (its arithmetic is unit tested)
+js/index-ui.js               the Index panel, and drawing tap areas on a printed index
+js/marks.js                  the open score's index marks: saving, tap-area layers
+js/index-logic.js            index rules: search, ordering, scroll bar labels, pasted lists (unit tested)
 js/page-view.js              page adjustments: crop, turn and straighten geometry, finding the music and the staff lines' angle (unit tested)
 js/adjust-ui.js              the Adjust pages screen
 js/views-store.js            saving page adjustments, with the page's markings

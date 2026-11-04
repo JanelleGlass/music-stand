@@ -99,12 +99,12 @@ export class Ink extends EventTarget {
 
   // Finger taps write instead of turning pages.
   get takesFingers() {
-    return this.toolbarOpen && this.fingerDraws && !this.hidden;
+    return this.toolbarOpen && this.fingerDraws && !this.hidden && !this.viewer.inputBlocked;
   }
 
   // A Pencil touch on a page would write (rather than scroll).
   get pencilWrites() {
-    return !this.hidden && (getSettings().pencilDraws || this.toolbarOpen);
+    return !this.hidden && !this.viewer.inputBlocked && (getSettings().pencilDraws || this.toolbarOpen);
   }
 
   get canUndo() { return this.store.canUndo; }
@@ -194,7 +194,7 @@ export class Ink extends EventTarget {
     if (!this.pages.length) return false;
     if (e.pointerType === 'pen') return this.pencilWrites;
     if (e.pointerType === 'touch') return this.takesFingers && e.isPrimary && !this.twoFinger;
-    if (e.pointerType === 'mouse') return this.toolbarOpen && !this.hidden && e.button === 0;
+    if (e.pointerType === 'mouse') return this.toolbarOpen && !this.hidden && !this.viewer.inputBlocked && e.button === 0;
     return false;
   }
 
@@ -370,7 +370,7 @@ export class Ink extends EventTarget {
       this.#endStroke(false);
       if (tap) {
         const r = this.scroller.getBoundingClientRect();
-        this.viewer.dispatchEvent(new CustomEvent('tap', { detail: { fy: (e.clientY - r.top) / r.height } }));
+        this.viewer.dispatchEvent(new CustomEvent('tap', { detail: { fy: (e.clientY - r.top) / r.height, x: e.clientX, y: e.clientY } }));
       }
       return;
     }

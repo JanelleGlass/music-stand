@@ -75,6 +75,7 @@
       <button id="v-back" class="icon-btn" aria-label="Back to library"><span data-icon="back"></span></button>
       <div id="v-title" class="vtitle"></div>
       <button id="v-page" class="chip" aria-label="Go to page">– / –</button>
+      <button id="v-index" class="icon-btn" aria-label="Index" title="Index"><span data-icon="list"></span></button>
       <button id="v-star" class="icon-btn star-btn" aria-label="Add to Favorites" aria-pressed="false"><span data-icon="star"></span></button>
       <button id="v-notes" class="icon-btn notes-btn" aria-label="Markings" aria-pressed="false"><span data-icon="pen"></span></button>
       <div id="notes-tools" class="notes-tools" role="toolbar" aria-label="Markings" hidden></div>
@@ -90,6 +91,17 @@
     </header>
 
     <div id="v-pill" class="pagepill"></div>
+    <button id="v-return" class="return-chip" hidden><span data-icon="back"></span>Back</button>
+
+    <div id="links-bar" class="links-bar" hidden>
+      <p>Drag across a line of the printed index to make a tap area. Tap an area to change it.</p>
+      <div class="links-nav">
+        <button id="lb-prev" class="icon-btn" aria-label="Previous page"><span data-icon="back"></span></button>
+        <span id="lb-num"></span>
+        <button id="lb-next" class="icon-btn" aria-label="Next page"><span data-icon="next"></span></button>
+        <button id="lb-done" class="btn small primary">Done</button>
+      </div>
+    </div>
     <div id="v-scrub" class="scrub none" aria-hidden="true"><div class="scrub-handle"><span class="scrub-label"></span></div></div>
 
     <div id="notes-pop" class="notes-pop" hidden></div>
@@ -284,6 +296,25 @@
 
       <p class="about">Music Stand <span id="app-version"></span></p>
     </div>
+  </dialog>
+
+  <!-- ============ Index of the open score (js/index-ui.js) ============ -->
+  <dialog id="index" class="sheet">
+    <header class="sheet-head">
+      <h2>Index <small id="ix-count"></small></h2>
+      <button id="ix-done" class="btn">Done</button>
+    </header>
+    <div class="ix-top">
+      <label class="search ix-search"><span data-icon="search"></span><input id="ix-search" type="search" placeholder="Hymn number or words of a title" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go"></label>
+      <div class="ix-actions">
+        <button id="ix-add-hymn" class="btn small"><span data-icon="plus"></span>Hymn here</button>
+        <button id="ix-add-section" class="btn small"><span data-icon="plus"></span>Section here</button>
+        <button id="ix-add-many" class="btn small">Add many</button>
+        <button id="ix-paste" class="btn small">Paste titles</button>
+        <button id="ix-links" class="btn small">Tap areas</button>
+      </div>
+    </div>
+    <div id="ix-list" class="sheet-body ix-list"></div>
   </dialog>
 
   <div id="boot-note" class="boot-note" hidden>Connecting to Google Drive…</div>
