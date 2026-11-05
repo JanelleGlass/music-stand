@@ -6,6 +6,7 @@
 import { $, esc, icon, toast, openModal, confirmDialog, actionSheet } from './ui.js';
 import { sortEntries, searchEntries, findHymn, nextNumber, entryAt, parseTitleList, hymnRun, boxBetween, compareNumbers, searchPages } from './index-logic.js';
 import { readPage, savedTexts, saveText, release as releaseOcr } from './ocr.js';
+import { libraryEdited } from './data.js';
 
 const MIN_BOX_PX = 14; // a drag smaller than this either way isn't a tap area
 const RETURN_MS = 12000; // how long "Back" shows after following a tap area
@@ -322,11 +323,15 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
           for (let num = a; num <= b; num++) {
             if (!dlg.open) return;
             note.textContent = `Reading page ${num}${b > a ? ` (${num - a + 1} of ${b - a + 1})` : ''}…`;
+            const pg = viewer.pages[indexOfNum(num)];
             const text = await readPage(viewer, indexOfNum(num), { onLoading: (m) => loadingNote(note, m) });
+            await saveText(pg.fileId, pg.num, text);
+            if (texts && texts.key === viewer.key) texts.byNum.set(`${pg.fileId}:${pg.num}`, text);
             const lines = parseTitleList(text);
             found += lines.length;
             if (lines.length) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + lines.map((l) => `${l.n} ${l.title}`).join('\n');
           }
+          libraryEdited();
           note.textContent = found
             ? `Found ${found} hymn${found === 1 ? '' : 's'}. Check the list above (text recognition misreads some letters and numbers), then tap Set titles.`
             : 'No lines with a hymn number were found on those pages. Is it the index? A clearer scan, or cropping the page with Adjust pages, can help.';
@@ -404,6 +409,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
         await saveText(p.fileId, p.num, text);
         texts.byNum.set(`${p.fileId}:${p.num}`, text);
         count++;
+        if (count % 25 === 0) libraryEdited(); // Google Drive sync sends it on
         job.status = '';
         if (sheet.open) (search.value.trim() ? render() : renderReading());
       }
@@ -413,6 +419,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     }
     if (reading === job) reading = null;
     releaseOcr();
+    if (count) libraryEdited();
     if (viewer.key !== job.key) return;
     if (sheet.open) render();
     if (failed) toast(`Reading the pages stopped: ${(failed && failed.message) || failed}. It needs to download text recognition once while online.`, 5000);

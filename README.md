@@ -133,9 +133,11 @@ text recognition (OCR), on the iPad itself:
   when they're printed in syllables ("A - maz - ing"), under *Words on the
   pages*.
 - The first use downloads text recognition (about 11 MB), so do it once
-  while online; after that it works offline. What the pages say is kept on
-  this device only (it isn't synced or backed up, and reading again is
-  quick to redo).
+  while online; after that it works offline.
+- With Google Drive sync on, what the pages say syncs too (in the notes and
+  folders file), so a hymnal only has to be read on one device: the others
+  can search it as soon as they've synced. It isn't in backups; reading the
+  pages again puts it back.
 
 ## Adjusting pages: crop, turn and straighten
 
@@ -234,7 +236,7 @@ account:
 - If many scores disappear from Drive at once (for example the Music Stand
   folder went to the trash), nothing is deleted on the iPad until you choose,
   from the **Review** strip, to keep them or delete them.
-- **Markings, page adjustments, the index, zoom, favorites and folders** sync too, in one small file in the
+- **Markings, page adjustments, the index (and what Read all pages read), zoom, favorites and folders** sync too, in one small file in the
   Music Stand folder ("Music Stand notes and folders.json"; leave it as it
   is). A score is recognised by its PDF, so markings and folders come back if
   a deleted score is restored from the Drive trash. Strokes written on two
