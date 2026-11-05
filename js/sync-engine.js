@@ -60,7 +60,7 @@ function stopsTheRun(e) {
 // person's say (too many at once to be sure they were meant). folders: ids of
 // Music Stand folders in the Drive trash with those scores in them.
 export async function syncOnce({ remote, local, log = () => {}, progress = () => {}, shouldStop = () => false, needsToken = () => false, decision = null, now = () => Date.now() }) {
-  const done = { uploaded: 0, downloaded: 0, renamed: 0, deleted: 0, trashed: 0, failed: 0, held: null, notes: 0, folders: 0, zooms: 0 };
+  const done = { uploaded: 0, downloaded: 0, renamed: 0, deleted: 0, trashed: 0, failed: 0, held: null, notes: 0, folders: 0, zooms: 0, texts: 0 };
   const check = () => {
     if (shouldStop() || needsToken()) throw new SyncStopped();
   };
@@ -233,6 +233,7 @@ export async function syncOnce({ remote, local, log = () => {}, progress = () =>
       done.notes = notesChanged.size;
       done.folders = foldersChanged.size;
       done.zooms += r.zooms || 0;
+      done.texts += r.texts || 0;
     });
   };
   if (done.held) log('Markings and folders will sync once you decide about the deleted scores.');

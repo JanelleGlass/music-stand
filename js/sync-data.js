@@ -11,11 +11,16 @@
 //     notes: { <hash>: { <page>: { strokes, erased, view?, marks? } } },
 //     folders: [{ id, name, nameAt, createdAt, deleted, deletedAt,
 //                 members: [{ score: <hash>, in, at }] }],
-//     zooms: { <hash>: { zoom, at } } }
+//     zooms: { <hash>: { zoom, at } },
+//     texts: { <hash>: { <page>: { text, at } } } }
 //
 // zooms is each score's zoom while scrolling (on a device it's kept with the
 // reading place, which isn't synced). Older versions of the app leave it out
 // of what they write; the devices that have it keep it.
+//
+// texts is what each page says, read by text recognition (js/ocr.js), so
+// a hymnal is read once, not on every device. On a device it's kept in kv
+// ("ocr:<score>:<page>"). The newer reading of a page wins.
 //
 // Every copy combines with the rules in js/notes-merge.js, which never lose a
 // change, so a run can stop anywhere, and two devices writing at once only
@@ -28,7 +33,41 @@ import { mergePage, pageIsEmpty, mergeNotes, mergeFolder, mergeFolders, normalis
 export const DATA_NAME = 'Music Stand notes and folders.json';
 export const DATA_VERSION = 1;
 
-const emptyDoc = () => ({ notes: {}, folders: [], zooms: {} });
+const emptyDoc = () => ({ notes: {}, folders: [], zooms: {}, texts: {} });
+
+// ---- Page texts ----
+
+const MAX_TEXT = 20000; // characters kept of a page's text
+
+export function normText(t) {
+  if (!t || typeof t !== 'object' || typeof t.text !== 'string') return null;
+  const at = Number(t.at) || 0;
+  return at ? { text: t.text.slice(0, MAX_TEXT), at } : null;
+}
+
+export function mergeText(a, b) {
+  a = normText(a);
+  b = normText(b);
+  if (!a || !b) return a || b;
+  if (a.at !== b.at) return a.at > b.at ? a : b;
+  return a.text >= b.text ? a : b;
+}
+
+// Texts by score, then page.
+export function mergeTexts(a = {}, b = {}) {
+  const out = {};
+  for (const h of [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].sort()) {
+    const pa = (a || {})[h] || {};
+    const pb = (b || {})[h] || {};
+    const pages = {};
+    for (const n of [...new Set([...Object.keys(pa), ...Object.keys(pb)])].filter((k) => /^\d+$/.test(k)).sort((x, y) => x - y)) {
+      const t = mergeText(pa[n], pb[n]);
+      if (t) pages[n] = t;
+    }
+    if (Object.keys(pages).length) out[h] = pages;
+  }
+  return out;
+}
 
 const older = (a, b) => (Date.parse(a.createdTime) || 0) - (Date.parse(b.createdTime) || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
@@ -47,10 +86,11 @@ function sortedNotes(notes) {
   return out;
 }
 
-// This device's markings, folders and zooms, with scores known by hash.
-// scores: [{ id, hash }]; records: annotation records; folders: lists
-// records; positions: reading places ({ id, zoom, zoomAt }).
-export function localDoc(scores, records, folders, positions = []) {
+// This device's markings, folders, zooms and page texts, with scores known
+// by hash. scores: [{ id, hash }]; records: annotation records; folders:
+// lists records; positions: reading places ({ id, zoom, zoomAt }); texts:
+// [{ fileId, page, text, at }].
+export function localDoc(scores, records, folders, positions = [], texts = []) {
   const hashOf = new Map(scores.filter((s) => s.hash).map((s) => [s.id, s.hash]));
   const notes = {};
   for (const r of records) {
@@ -70,7 +110,14 @@ export function localDoc(scores, records, folders, positions = []) {
     const h = p && hashOf.get(p.id);
     if (h && p.zoomAt) zooms[h] = mergeZoom(zooms[h], { zoom: p.zoom, at: p.zoomAt });
   }
-  return { notes: sortedNotes(notes), folders: mergeFolders(translated), zooms: mergeZooms(zooms) };
+  const read = {};
+  for (const t of texts) {
+    const h = t && hashOf.get(t.fileId);
+    if (!h) continue;
+    const pages = read[h] || (read[h] = {});
+    pages[t.page] = mergeText(pages[t.page], t);
+  }
+  return { notes: sortedNotes(notes), folders: mergeFolders(translated), zooms: mergeZooms(zooms), texts: mergeTexts(read) };
 }
 
 export function mergeDocs(a, b) {
@@ -78,7 +125,7 @@ export function mergeDocs(a, b) {
   for (const h of new Set([...Object.keys(a.notes || {}), ...Object.keys(b.notes || {})])) {
     notes[h] = mergeNotes({ pages: (a.notes || {})[h] }, { pages: (b.notes || {})[h] }).pages;
   }
-  return { notes: sortedNotes(notes), folders: mergeFolders(a.folders || [], b.folders || []), zooms: mergeZooms(a.zooms, b.zooms) };
+  return { notes: sortedNotes(notes), folders: mergeFolders(a.folders || [], b.folders || []), zooms: mergeZooms(a.zooms, b.zooms), texts: mergeTexts(a.texts, b.texts) };
 }
 
 // The part of a doc about the scores on this device (what localDoc gives
@@ -90,11 +137,12 @@ export function restrictTo(doc, hashes) {
     notes,
     folders: doc.folders.map((f) => normaliseFolder({ ...f, members: f.members.filter((m) => hashes.has(m.score)) })),
     zooms: Object.fromEntries(Object.entries(doc.zooms || {}).filter(([h]) => hashes.has(h))),
+    texts: Object.fromEntries(Object.entries(doc.texts || {}).filter(([h]) => hashes.has(h))),
   };
 }
 
 export function isEmptyDoc(doc) {
-  return !Object.keys(doc.notes).length && !doc.folders.length && !Object.keys(doc.zooms || {}).length;
+  return !Object.keys(doc.notes).length && !doc.folders.length && !Object.keys(doc.zooms || {}).length && !Object.keys(doc.texts || {}).length;
 }
 
 // A backup restored with Replace may hold strokes that were erased since
@@ -121,14 +169,14 @@ export function resurrect(local, remote, hashes) {
       notes[h][n] = mergePage({ strokes: page.strokes.map((s) => (gone.has(s.id) ? { ...s, id: revived(s.id) } : s)), erased: page.erased, view: page.view, marks: page.marks }, null);
     }
   }
-  return { notes: sortedNotes(notes), folders: local.folders, zooms: local.zooms || {} };
+  return { notes: sortedNotes(notes), folders: local.folders, zooms: local.zooms || {}, texts: local.texts || {} };
 }
 
 // Whether this device has markings or folder changes Drive hasn't had yet
 // (for the "waiting to sync" sign at start-up).
 export async function dataPending(local) {
   const scores = (await local.scores()).filter((s) => s.hash);
-  const here = localDoc(scores, await local.notesRecords(), await local.folders(), local.places ? await local.places() : []);
+  const here = localDoc(scores, await local.notesRecords(), await local.folders(), local.places ? await local.places() : [], local.pageTexts ? await local.pageTexts() : []);
   const { data: state = {} } = await local.records();
   if (isEmptyDoc(here) && !state.fp) return false;
   return (await fingerprintOf(here, scores.map((s) => s.hash))) !== state.fp;
@@ -140,7 +188,7 @@ function fingerprintOf(doc, hashes) {
 }
 
 export function serialize(doc) {
-  return JSON.stringify({ app: 'music-stand', kind: 'data', v: DATA_VERSION, notes: doc.notes, folders: doc.folders, zooms: doc.zooms || {} });
+  return JSON.stringify({ app: 'music-stand', kind: 'data', v: DATA_VERSION, notes: doc.notes, folders: doc.folders, zooms: doc.zooms || {}, texts: doc.texts || {} });
 }
 
 // The doc in a file's text: { doc }, { newer: true } from a later version
@@ -169,7 +217,8 @@ export function parse(text) {
     const n = normZoom(z);
     if (n) zooms[h] = n;
   }
-  return { doc: mergeDocs({ notes, folders, zooms }, emptyDoc()) };
+  const texts = raw.texts && typeof raw.texts === 'object' ? raw.texts : {};
+  return { doc: mergeDocs({ notes, folders, zooms, texts }, emptyDoc()) };
 }
 
 function validStroke(s) {
@@ -178,8 +227,8 @@ function validStroke(s) {
 }
 
 // What to write on this device to bring it up to doc: pages of markings,
-// folders and zooms that differ. scores: [{ id, hash }].
-export function localWrites(doc, scores, records, folders, positions = []) {
+// folders, zooms and page texts that differ. scores: [{ id, hash }].
+export function localWrites(doc, scores, records, folders, positions = [], texts = []) {
   const notes = [];
   const byKey = new Map(records.map((r) => [`${r.fileId}:${r.page}`, r]));
   for (const s of scores) {
@@ -211,7 +260,17 @@ export function localWrites(doc, scores, records, folders, positions = []) {
     const p = posOf.get(s.id);
     if (!p || !p.zoomAt || z.at > p.zoomAt) zooms.push({ fileId: s.id, zoom: z.zoom, at: z.at });
   }
-  return { notes, lists, zooms };
+  const textOf = new Map(texts.map((t) => [`${t.fileId}:${t.page}`, t]));
+  const reads = [];
+  for (const s of scores) {
+    const pages = s.hash && (doc.texts || {})[s.hash];
+    if (!pages) continue;
+    for (const [n, t] of Object.entries(pages)) {
+      const here = normText(textOf.get(`${s.id}:${n}`));
+      if (!here || !sameContent(mergeText(here, t), here)) reads.push({ fileId: s.id, page: Number(n), text: t.text, at: t.at });
+    }
+  }
+  return { notes, lists, zooms, texts: reads };
 }
 
 // One round of markings-and-folders sync. Returns { notes, folders, sent }:
@@ -220,13 +279,14 @@ export function localWrites(doc, scores, records, folders, positions = []) {
 //   ensureFolder()  the Music Stand folder in use (made if there is none)
 //   check()         throws to pause the run
 export async function syncData({ remote, local, log = () => {}, check = () => {}, ensureFolder }) {
-  const out = { notes: [], folders: [], zooms: 0, sent: false };
+  const out = { notes: [], folders: [], zooms: 0, texts: 0, sent: false };
   const scores = (await local.scores()).filter((s) => s.hash);
   const records = await local.notesRecords();
   const folders = await local.folders();
   const positions = local.places ? await local.places() : [];
+  const pageTexts = local.pageTexts ? await local.pageTexts() : [];
   const { data: state = {}, restore = null } = await local.records();
-  const here = localDoc(scores, records, folders, positions);
+  const here = localDoc(scores, records, folders, positions, pageTexts);
   const hashes = new Set(scores.map((s) => s.hash));
   const fp = await fingerprintOf(here, hashes);
 
@@ -269,13 +329,14 @@ export async function syncData({ remote, local, log = () => {}, check = () => {}
   const merged = mergeDocs(remoteDoc, mine);
 
   // Bring this device up to date.
-  const writes = localWrites(merged, scores, records, folders, positions);
-  if (writes.notes.length || writes.lists.length || writes.zooms.length) {
+  const writes = localWrites(merged, scores, records, folders, positions, pageTexts);
+  if (writes.notes.length || writes.lists.length || writes.zooms.length || writes.texts.length) {
     check();
     await local.applyData(writes);
     out.notes = [...new Set(writes.notes.map((w) => w.fileId))];
     out.folders = writes.lists.map((f) => f.id);
     out.zooms = writes.zooms.length;
+    out.texts = new Set(writes.texts.map((t) => t.fileId)).size;
   }
 
   // Bring Drive up to date: one file with everything.

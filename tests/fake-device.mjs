@@ -64,6 +64,7 @@ export class FakeDevice {
     this.blobs.delete(id);
     this.positions.delete(id);
     for (const [k, r] of this.annotations) if (r.fileId === id) this.annotations.delete(k);
+    for (const k of [...this.kv.keys()]) if (k.startsWith(`ocr:${id}:`)) this.kv.delete(k);
     for (const f of this.lists.values()) f.members = f.members.filter((m) => m.score !== id);
   }
 
@@ -87,6 +88,34 @@ export class FakeDevice {
   zoomOf(id) {
     const p = this.positions.get(id);
     return p ? p.zoom : undefined;
+  }
+
+  // Reads a page with text recognition (js/ocr.js).
+  readPage(id, page, text) {
+    this.kv.set(`ocr:${id}:${page}`, { v: 1, text, at: this.now() });
+  }
+
+  textOf(id, page) {
+    const t = this.kv.get(`ocr:${id}:${page}`);
+    return t ? t.text : undefined;
+  }
+
+  // Adds index marks to a page (js/marks.js).
+  addMarks(id, page, marks) {
+    const at = this.now();
+    this.#notesPage(id, page, { strokes: [], erased: [], marks: marks.map((m, i) => ({ id: `${this.name}-m${++this.seq}`, at: at + i, ...m })) });
+  }
+
+  // Changes or deletes (gone) a mark.
+  changeMark(id, page, markId, patch) {
+    const r = this.annotations.get(`${id}:${page}`);
+    const m = r.marks.find((x) => x.id === markId);
+    this.#notesPage(id, page, { strokes: [], erased: [], marks: [{ ...m, ...patch, at: this.now() }] });
+  }
+
+  marksOn(id, page) {
+    const r = this.annotations.get(`${id}:${page}`);
+    return r && r.marks ? r.marks.filter((m) => !m.gone) : [];
   }
 
   // Crops and turns a page (js/page-view.js).
@@ -246,7 +275,19 @@ export class FakeDevice {
   async notesRecords() { return [...this.annotations.values()].map((r) => structuredClone(r)); }
   async folders() { return [...this.lists.values()].map((f) => structuredClone(f)); }
   async places() { return [...this.positions.values()].map((p) => structuredClone(p)); }
-  async applyData({ notes, lists, zooms = [] }) {
+  async pageTexts() {
+    return [...this.kv].filter(([k]) => k.startsWith('ocr:')).map(([k, v]) => {
+      const i = k.lastIndexOf(':');
+      return { fileId: k.slice(4, i), page: Number(k.slice(i + 1)), text: v.text, at: v.at };
+    });
+  }
+  async applyData({ notes, lists, zooms = [], texts = [] }) {
+    for (const t of texts) {
+      if (!this.files.has(t.fileId)) continue;
+      const key = `ocr:${t.fileId}:${t.page}`;
+      const here = this.kv.get(key);
+      if (!here || here.at < t.at) this.kv.set(key, { v: 1, text: t.text, at: t.at });
+    }
     for (const z of zooms) {
       if (!this.files.has(z.fileId)) continue;
       const p = this.positions.get(z.fileId);

@@ -398,3 +398,54 @@ test('a zoom change alone counts as waiting to sync', async () => {
   await sync(drive, a);
   assert.equal(await dataPending(a), false);
 });
+
+// ---- The index, and what the pages say ----
+
+test('a hymnal’s index travels: hymns, sections and tap areas, changes and deletes', async () => {
+  const { drive, devices: [a, b] } = setup('A', 'B');
+  const ida = a.add('Hymnal', 'hymnal-pdf');
+  await sync(drive, a);
+  await sync(drive, b);
+  const idb = b.byName('Hymnal').id;
+  a.addMarks(ida, 12, [{ kind: 'section', title: 'Advent', y: 0 }, { kind: 'hymn', n: '1', title: '', y: 0 }]);
+  a.addMarks(ida, 1, [{ kind: 'link', box: [50, 100, 400, 30], hymn: '1' }]);
+  await sync(drive, a);
+  assert.equal((await sync(drive, b)).notes, 1);
+  assert.deepEqual(b.marksOn(idb, 12).map((m) => m.title || m.n).sort(), ['1', 'Advent']);
+  assert.equal(b.marksOn(idb, 1)[0].hymn, '1');
+  // B names the hymn; A deletes the section meanwhile. Both changes stay.
+  const hymn = b.marksOn(idb, 12).find((m) => m.kind === 'hymn');
+  b.changeMark(idb, 12, hymn.id, { title: 'O Come, O Come, Emmanuel' });
+  const advent = a.marksOn(ida, 12).find((m) => m.kind === 'section');
+  a.changeMark(ida, 12, advent.id, { gone: true });
+  await sync(drive, b);
+  await sync(drive, a);
+  await sync(drive, b);
+  for (const [d, id] of [[a, ida], [b, idb]]) {
+    assert.deepEqual(d.marksOn(id, 12).map((m) => [m.kind, m.title]), [['hymn', 'O Come, O Come, Emmanuel']]);
+  }
+});
+
+test('what the pages say is read once and reaches the other devices', async () => {
+  const { drive, devices: [a, b] } = setup('A', 'B');
+  const ida = a.add('Hymnal', 'hymnal-pdf');
+  await sync(drive, a);
+  await sync(drive, b);
+  const idb = b.byName('Hymnal').id;
+  a.readPage(ida, 2, 'Amazing grace, how sweet the sound');
+  a.readPage(ida, 3, 'Abide with me');
+  assert.equal(await dataPending(a), true);
+  await sync(drive, a);
+  const r = await sync(drive, b);
+  assert.equal(r.texts, 1);
+  assert.equal(b.textOf(idb, 2), 'Amazing grace, how sweet the sound');
+  assert.equal(b.textOf(idb, 3), 'Abide with me');
+  // B reads page 3 again later: the newer reading wins everywhere.
+  b.readPage(idb, 3, 'Abide with me; fast falls the eventide');
+  await sync(drive, b);
+  await sync(drive, a);
+  assert.equal(a.textOf(ida, 3), 'Abide with me; fast falls the eventide');
+  // Nothing more to do.
+  assert.equal((await sync(drive, a)).texts, 0);
+  assert.equal(await dataPending(a), false);
+});

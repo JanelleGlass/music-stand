@@ -124,15 +124,24 @@ export const localStore = {
   // ---- Markings and folders (js/sync-data.js) ----
 
   notesRecords: () => db.getAll('annotations'),
+  // What pages say, read by text recognition (js/ocr.js).
+  async pageTexts() {
+    const out = [];
+    for (const [k, v] of await db.getAllWithPrefix('kv', 'ocr:')) {
+      const m = /^ocr:(.+):(\d+)$/.exec(k);
+      if (m && v && typeof v.text === 'string') out.push({ fileId: m[1], page: Number(m[2]), text: v.text, at: Number(v.at) || 0 });
+    }
+    return out;
+  },
   folders: () => db.getAll('lists'),
   places: () => db.getAll('positions'),
 
   // Pages of markings and folders from Drive, combined with what is stored
   // (a save made meanwhile is kept).
   // Scores deleted meanwhile get nothing.
-  async applyData({ notes, lists, zooms = [] }) {
+  async applyData({ notes, lists, zooms = [], texts = [] }) {
     const at = Date.now();
-    await db.transact(['files', 'annotations', 'lists', 'positions'], (s) => {
+    await db.transact(['files', 'annotations', 'lists', 'positions', 'kv'], (s) => {
       const req = s.files.getAllKeys();
       req.onsuccess = () => {
         const here = new Set(req.result);
@@ -143,6 +152,16 @@ export const localStore = {
           r.onsuccess = () => {
             const merged = mergePage(r.result, data);
             if (!pageIsEmpty(merged)) s.annotations.put({ id: key, fileId, page, ...merged, updatedAt: at });
+          };
+        }
+        // A newer reading of a page.
+        for (const t of texts) {
+          if (!here.has(t.fileId)) continue;
+          const key = `ocr:${t.fileId}:${t.page}`;
+          const r = s.kv.get(key);
+          r.onsuccess = () => {
+            if (r.result && Number(r.result.at) >= t.at) return;
+            s.kv.put({ v: 1, text: t.text, at: t.at }, key);
           };
         }
         // A newer zoom; the reading place stays.
