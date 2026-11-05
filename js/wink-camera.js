@@ -2,7 +2,8 @@
 //
 // Events:
 //   status  { state: 'off'|'loading'|'running'|'noface'|'error', message }
-//   frame   { face, rawL, rawR, l, r, progress, state, eye }   (every analysed frame)
+//   frame   { face, rawL, rawR, l, r, progress, state, eye, landmarks }   (every analysed frame;
+//           landmarks are the face mesh points, normalised 0–1 to the video frame)
 //   wink    { eye: 'left'|'right' }                             (person's own left/right)
 import { WinkLogic } from './wink-logic.js';
 
@@ -237,7 +238,8 @@ export class WinkCamera extends EventTarget {
     if (this.swap) [rawL, rawR] = [rawR, rawL];
     this.#setStatus('running', 'Watching for winks');
     const out = this.logic.update(rawL, rawR, now);
-    this.#emitFrame({ face: true, rawL, rawR, ...out });
+    const landmarks = result.faceLandmarks && result.faceLandmarks[0];
+    this.#emitFrame({ face: true, rawL, rawR, ...out, landmarks });
     if (out.event) this.dispatchEvent(new CustomEvent('wink', { detail: { eye: out.event } }));
   };
 

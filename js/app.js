@@ -327,11 +327,77 @@ function setupWink() {
     btn.title = message || '';
     $('#cam').classList.toggle('preview', getSettings().winkPreview && state !== 'off');
     if (state === 'error' && viewerActive) toast(message, 6000);
-    if (state !== 'running') ring.style.strokeDashoffset = RING;
+    if (state !== 'running') {
+      ring.style.strokeDashoffset = RING;
+      drawEyes(null);
+    }
   });
   camera.addEventListener('frame', (e) => {
     const p = e.detail.state === 'holding' ? e.detail.progress : 0;
     ring.style.strokeDashoffset = String(RING * (1 - p));
+    drawEyes(e.detail);
+  });
+}
+
+// ---------- Eye outlines on the camera preview ----------
+
+// Face-mesh points: a closed loop around each eyelid, the iris centre and one
+// iris edge point, and the lid/corner points used to judge how open it is.
+const EYES = [
+  { lid: [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246], iris: 468, irisEdge: 469, top: 159, bottom: 145, inner: 133, outer: 33 },
+  { lid: [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466], iris: 473, irisEdge: 474, top: 386, bottom: 374, inner: 362, outer: 263 },
+];
+
+function drawEyes(d) {
+  const video = $('#cam');
+  const canvas = $('#cam-overlay');
+  if (!video.classList.contains('preview')) return;
+  const ctx = canvas.getContext('2d');
+  const cw = canvas.clientWidth;
+  const ch = canvas.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
+    canvas.width = Math.round(cw * dpr);
+    canvas.height = Math.round(ch * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  const pts = d && d.face && d.landmarks;
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!pts || !vw || !vh) return;
+
+  // The video is drawn with object-fit: cover, so map the same way.
+  const scale = Math.max(cw / vw, ch / vh);
+  const ox = (cw - vw * scale) / 2;
+  const oy = (ch - vh * scale) / 2;
+  const at = (i) => ({ x: pts[i].x * vw * scale + ox, y: pts[i].y * vh * scale + oy });
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  // While a wink is being held (or has just fired), highlight the more-closed eye.
+  const openness = EYES.map((e) => dist(at(e.top), at(e.bottom)) / (dist(at(e.inner), at(e.outer)) || 1));
+  const winking = d.state === 'holding' || d.state === 'fired'
+    ? (openness[0] < openness[1] ? 0 : 1) : -1;
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e6b54a';
+
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  EYES.forEach((e, n) => {
+    const color = n === winking ? (d.state === 'fired' ? accent : '#e6b54a') : '#3fcf7a';
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    e.lid.forEach((i, k) => {
+      const p = at(i);
+      if (k) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+    if (pts.length > e.irisEdge) {
+      const c = at(e.iris);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, Math.max(1, dist(c, at(e.irisEdge))), 0, Math.PI * 2);
+      ctx.stroke();
+    }
   });
 }
 
