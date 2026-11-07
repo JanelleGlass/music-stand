@@ -321,6 +321,14 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
   left: max(12px, env(safe-area-inset-left)); bottom: calc(62px + env(safe-area-inset-bottom));
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); border: 2px solid rgba(255, 255, 255, 0.25);
 }
+/* Eye outlines drawn over the preview; same box as .cam.preview so they line up. */
+.cam-overlay {
+  display: none; position: fixed; z-index: 41; pointer-events: none;
+  width: 168px; height: 126px; border-radius: 12px; border: 2px solid transparent;
+  left: max(12px, env(safe-area-inset-left)); bottom: calc(62px + env(safe-area-inset-bottom));
+  transform: scaleX(-1);
+}
+.cam.preview + .cam-overlay { display: block; }
 
 /* ---------- Dialogs ---------- */
 
