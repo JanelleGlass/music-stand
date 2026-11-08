@@ -472,7 +472,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 
 /* Markings tools take the place of the page, zoom and wink controls. */
 .vbar.marking > #v-page, .vbar.marking > .zoom, .vbar.marking > #v-wink, .vbar.marking > #v-settings,
-.vbar.marking > #v-star, .vbar.marking > #v-notes, .vbar.marking > #v-mode, .vbar.marking > #v-adjust { display: none; }
+.vbar.marking > #v-star, .vbar.marking > #v-notes, .vbar.marking > #v-mode, .vbar.marking > #v-adjust, .vbar.marking > #v-link { display: none; }
 .notes-tools { display: flex; align-items: center; gap: 2px; }
 .notes-tools .sep { width: 1px; height: 26px; margin: 0 4px; background: rgba(255, 255, 255, 0.18); }
 .notes-tools .icon-btn { position: relative; }
@@ -574,7 +574,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 }
 @media (max-width: 380px) {
   /* The page, wink and settings buttons stay on screen; the star is on the library cards too. */
-  .vbar:not(.marking) > #v-star, .vbar:not(.marking) #v-zoom, .vbar:not(.marking) > #v-mode, .vbar:not(.marking) > #v-adjust { display: none; }
+  .vbar:not(.marking) > #v-star, .vbar:not(.marking) > #v-link, .vbar:not(.marking) #v-zoom, .vbar:not(.marking) > #v-mode, .vbar:not(.marking) > #v-adjust { display: none; }
 }
 
 /* ---------- Adjust pages (js/adjust-ui.js) ---------- */
@@ -712,3 +712,54 @@ textarea.ix-text { min-height: 180px; padding: 10px 12px; font-size: 16px; resiz
 .ix-ocr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 15px; }
 .ix-ocr .field { width: 84px; min-height: 40px; margin: 0; font-size: 16px; }
 .ix-ocr-note { margin-top: 8px !important; font-size: 14px; }
+
+/* Typed notes (js/text-notes.js): a layer over the page, sized and turned
+   like the markings layers. --u is one page unit (the page is 1000 wide). */
+.page .tnotes { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; z-index: 5; }
+#viewer.notes-hidden .page .tnotes { display: none; }
+.tnote {
+  position: absolute; pointer-events: auto; transform-origin: 0 0; box-sizing: border-box;
+  font-family: -apple-system, system-ui, "Segoe UI", sans-serif; line-height: 1.25; font-weight: 500;
+}
+.tnote.s0 { font-size: calc(var(--u) * 17); }
+.tnote.s1 { font-size: calc(var(--u) * 23); }
+.tnote.s2 { font-size: calc(var(--u) * 32); }
+.tnote.open {
+  padding: calc(var(--u) * 5) calc(var(--u) * 8); min-height: 1.6em;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  background: rgba(255, 252, 235, 0.9); border-radius: calc(var(--u) * 6);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.night .tnote.open { background: rgba(26, 26, 28, 0.92); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18); }
+.tnote.shut {
+  width: max(calc(var(--u) * 36), 28px); height: max(calc(var(--u) * 36), 28px);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 7px; background: currentColor; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.tnote.shut svg { width: 72%; height: 72%; color: #fff; }
+.night .tnote.shut svg { color: #111; }
+/* With the Text tool, notes look editable and can be dragged. */
+#viewer.texting .tnote:not(.editing) { outline: 2px dashed rgba(205, 120, 40, 0.85); outline-offset: 2px; touch-action: none; cursor: move; }
+.tnote.editing { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tnote-text {
+  display: block; width: 100%; margin: 0; padding: 0; border: 0; outline: none; resize: none; overflow: hidden;
+  background: transparent; color: inherit; font: inherit; line-height: inherit;
+  /* Safari zooms into smaller text boxes as they're tapped. */
+  font-size: max(1em, 16px);
+  -webkit-user-select: text; user-select: text;
+}
+.tnote-grip, .tnote-width {
+  position: absolute; width: 26px; height: 26px; border-radius: 50%; touch-action: none;
+  background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); box-sizing: border-box;
+}
+.tnote-grip { left: -15px; top: -15px; cursor: move; }
+.tnote-width { right: -15px; top: 50%; margin-top: -13px; cursor: ew-resize; border-radius: 8px; }
+.tnote-bar { left: 12px; }
+.tnote-bar .btn.small { margin-left: 4px; }
+.size-btn.text-size b { font-weight: 700; line-height: 1; }
+.link-rows { display: grid; gap: 8px; margin-top: 12px; }
+.link-row { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.link-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-row .btn .ico { width: 16px; height: 16px; margin-right: 6px; }
+.copy-field { width: 100%; box-sizing: border-box; font-size: 16px; }
+.ix-row .ix-copy { color: var(--muted, inherit); }

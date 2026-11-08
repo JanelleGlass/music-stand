@@ -1,7 +1,7 @@
 // Run with: node --test tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergePage, pageIsEmpty, mergeNotes, mergeFolder, mergeFolders, restampFolder, sameContent } from '../js/notes-merge.js';
+import { mergePage, pageIsEmpty, mergeNotes, mergeFolder, mergeFolders, restampFolder, sameContent, mergeMarks, restampMarks } from '../js/notes-merge.js';
 
 const stroke = (id, at) => ({ id, at, tool: 'pen', color: '#000000', w: 2, pts: [0, 0, 10, 10] });
 
@@ -90,4 +90,55 @@ test('a page\u2019s adjustment travels with its markings; the newer wins', () =>
   assert.equal('view' in mergePage({ strokes: [stroke], erased: [] }, null), false);
   // A page with only an adjustment is kept.
   assert.equal(pageIsEmpty({ strokes: [], erased: [], view: { rot: 0, crop: null, at: 1 } }), false);
+});
+
+// ---- Typed notes (index marks of kind 'note') ----
+
+const note = (id, at, more = {}) => ({ id, at, kind: 'note', x: 0.2, y: 0.3, w: 0.25, r: 0, text: 'spider fingers', color: '#1d1d1f', size: 1, open: true, ...more });
+
+test('typed notes from two devices are all kept', () => {
+  const m = mergePage({ marks: [note('n1', 1)] }, { marks: [note('n2', 2)] });
+  assert.deepEqual(m.marks.map((x) => x.id), ['n1', 'n2']);
+});
+
+test('the newer change of a typed note wins, whichever copy has it', () => {
+  const older = note('n', 1, { text: 'old' });
+  const newer = note('n', 5, { text: 'new\nline two', open: false, x: 0.6 });
+  for (const [a, b] of [[older, newer], [newer, older]]) {
+    const [m] = mergeMarks([a], [b]);
+    assert.equal(m.text, 'new\nline two');
+    assert.equal(m.open, false);
+    assert.equal(m.x, 0.6);
+  }
+});
+
+test('a deleted typed note stays deleted, and comes back if changed later', () => {
+  const gone = { id: 'n', at: 3, gone: true };
+  assert.deepEqual(mergeMarks([note('n', 2)], [gone]), [gone]);
+  assert.equal(mergeMarks([note('n', 4)], [gone])[0].text, 'spider fingers');
+  assert.deepEqual(mergeMarks([note('n', 3)], [gone]), [gone]); // a tie: the delete
+});
+
+test('typed notes are cleaned up: text kept with its lines, the rest within bounds', () => {
+  const [m] = mergeMarks([{ id: 'n', at: 1, kind: 'note', x: 2, y: -1, w: 0, r: 450, text: 'a\r\nb', color: 'red', size: 9 }], null);
+  assert.deepEqual(m, { id: 'n', at: 1, kind: 'note', x: 1, y: 0, w: 0.25, r: 90, text: 'a\nb', color: '#1d1d1f', size: 1, open: true });
+  assert.equal(mergeMarks([note('n', 1, { text: 'x'.repeat(5000) })], null)[0].text.length, 4000);
+  assert.equal(mergeMarks([note('n', 1, { color: '#ABCDEF', w: 0.001 })], null)[0].color, '#abcdef');
+  assert.equal(mergeMarks([note('n', 1, { w: 0.001 })], null)[0].w, 0.03);
+});
+
+test('a page with only a typed note is not empty, and merging it is order-free', () => {
+  const a = { pages: { 4: { strokes: [], erased: [], marks: [note('n1', 1)] } } };
+  const b = { pages: { 4: { strokes: [stroke('s', 2)], erased: [], marks: [note('n1', 3, { text: 'later' })] } } };
+  assert.equal(pageIsEmpty(a.pages[4]), false);
+  const one = mergeNotes(a, b);
+  assert.ok(sameContent(one, mergeNotes(b, a)));
+  assert.ok(sameContent(mergeNotes(one, one), one));
+  assert.equal(one.pages[4].marks[0].text, 'later');
+});
+
+test('restoring a backup stamps typed notes as new', () => {
+  const [m] = restampMarks([note('n', 5)], 100);
+  assert.equal(m.at, 100);
+  assert.equal(m.kind, 'note');
 });

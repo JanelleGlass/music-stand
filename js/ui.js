@@ -31,6 +31,8 @@ const ICONS = {
   crop: '<path d="M6 2.5V18h15.5"/><path d="M2.5 6H18v15.5"/>',
   'turn-left': '<path d="M4 4v5h5"/><path d="M4.6 14a8 8 0 1 0 1.9-8.3L4 9"/>',
   'turn-right': '<path d="M20 4v5h-5"/><path d="M19.4 14a8 8 0 1 1-1.9-8.3L20 9"/>',
+  text: '<path d="M5 7V4.5h14V7"/><path d="M12 4.5V19.5"/><path d="M9 19.5h6"/>',
+  link: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>',
   scroll: '<rect x="3.5" y="3" width="11" height="18" rx="1.8"/><path d="M19.5 5.5v13M17.3 7.7l2.2-2.2 2.2 2.2M17.3 16.3l2.2 2.2 2.2-2.2"/>',
 };
@@ -167,5 +169,63 @@ export function actionSheet({ title, message = '', actions }) {
     dlg.querySelectorAll('[data-i]').forEach((b) => {
       b.onclick = () => finish(b.dataset.i === '-1' ? null : actions[+b.dataset.i].value);
     });
+  });
+}
+
+// ---- Copying ----
+
+// Copies text to the clipboard (call it straight from a tap), saying so.
+// Where the browser won't, the text is shown selected, to copy by hand.
+export function copyText(text, what = 'Link') {
+  const done = () => toast(`${what} copied.`, 1600);
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, () => showCopyBox(text, what));
+      return;
+    }
+  } catch { /* not allowed: the old way, or by hand */ }
+  if (legacyCopy(text)) done();
+  else showCopyBox(text, what);
+}
+
+function legacyCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;left:0;top:0;opacity:0;font-size:16px';
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { /* not supported */ }
+  ta.remove();
+  return ok;
+}
+
+function showCopyBox(text, what) {
+  return openModal((dlg, finish) => {
+    dlg.innerHTML = `
+      <div class="modal-body">
+        <h2>${esc(what)}</h2>
+        <p>Copy it from here:</p>
+        <input class="field copy-field" readonly value="${esc(text)}">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-v="0">Done</button>
+        <button class="btn primary" data-v="1">Copy</button>
+      </div>`;
+    const input = dlg.querySelector('input');
+    const select = () => { input.focus(); input.select(); input.setSelectionRange(0, text.length); };
+    dlg.querySelector('[data-v="0"]').onclick = () => finish(null);
+    dlg.querySelector('[data-v="1"]').onclick = () => {
+      select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch { /* not supported */ }
+      if (ok) {
+        finish(null);
+        toast(`${what} copied.`, 1600);
+      }
+    };
+    setTimeout(select, 50);
   });
 }

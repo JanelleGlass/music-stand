@@ -426,6 +426,30 @@ test('a hymnal’s index travels: hymns, sections and tap areas, changes and del
   }
 });
 
+test('typed notes travel: text, place, shown or collapsed, and deletes', async () => {
+  const { drive, devices: [a, b] } = setup('A', 'B');
+  const ida = a.add('Suzuki Violin Book 1', 'book-pdf');
+  await sync(drive, a);
+  await sync(drive, b);
+  const idb = b.byName('Suzuki Violin Book 1').id;
+  a.addMarks(ida, 8, [{ kind: 'note', x: 0.2, y: 0.4, w: 0.3, r: 0, text: 'spider fingers\nbow lane 3', color: '#d0312d', size: 2, open: true }]);
+  await sync(drive, a);
+  assert.equal((await sync(drive, b)).notes, 1);
+  const [onB] = b.marksOn(idb, 8);
+  assert.equal(onB.text, 'spider fingers\nbow lane 3');
+  assert.deepEqual([onB.x, onB.y, onB.w, onB.color, onB.size, onB.open], [0.2, 0.4, 0.3, '#d0312d', 2, true]);
+  // B collapses it; then A deletes it. The delete, being newer, wins on both.
+  b.changeMark(idb, 8, onB.id, { open: false });
+  await sync(drive, b);
+  await sync(drive, a);
+  assert.equal(a.marksOn(ida, 8)[0].open, false);
+  a.changeMark(ida, 8, onB.id, { gone: true });
+  await sync(drive, a);
+  await sync(drive, b);
+  assert.deepEqual(a.marksOn(ida, 8), []);
+  assert.deepEqual(b.marksOn(idb, 8), []);
+});
+
 test('what the pages say is read once and reaches the other devices', async () => {
   const { drive, devices: [a, b] } = setup('A', 'B');
   const ida = a.add('Hymnal', 'hymnal-pdf');

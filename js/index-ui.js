@@ -7,11 +7,13 @@ import { $, esc, icon, toast, openModal, confirmDialog, actionSheet } from './ui
 import { sortEntries, searchEntries, findHymn, nextNumber, entryAt, parseTitleList, hymnRun, boxBetween, compareNumbers, searchPages } from './index-logic.js';
 import { readPage, savedTexts, saveText, release as releaseOcr } from './ocr.js';
 import { libraryEdited } from './data.js';
+import { pieceKey } from './links.js';
 
 const MIN_BOX_PX = 14; // a drag smaller than this either way isn't a tap area
 const RETURN_MS = 12000; // how long "Back" shows after following a tap area
 
-export function initIndexUi({ viewer, onOpenChange = () => {} }) {
+// copyLink(place): copies a link to the open score at { piece } (js/app.js).
+export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => {} }) {
   const marks = viewer.marks;
   const sheet = $('#index');
   const search = $('#ix-search');
@@ -52,6 +54,11 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
   }
 
   const textOf = (p) => (texts && texts.key === viewer.key ? texts.byNum.get(`${p.fileId}:${p.num}`) : undefined);
+  // What can be searched on each page: the words read on it, and its typed
+  // notes (js/text-notes.js).
+  const pageWords = () => viewer.pages
+    .map((p, index) => ({ index, num: p.num, text: [textOf(p), viewer.texts.textOf(p)].filter(Boolean).join('\n') }))
+    .filter((p) => p.text);
 
   function close() {
     if (sheet.open) sheet.close();
@@ -68,7 +75,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     const sections = all.length - hymns;
     $('#ix-count').textContent = all.length ? [hymns && `${hymns} hymn${hymns === 1 ? '' : 's'}`, sections && `${sections} section${sections === 1 ? '' : 's'}`].filter(Boolean).join(', ') : '';
     renderReading();
-    const read = viewer.pages.map((p, index) => ({ index, num: p.num, text: textOf(p) })).filter((p) => p.text);
+    const read = pageWords();
     const pageHits = q ? searchPages(read, q) : [];
     const words = pageHits.length
       ? `<h3 class="ix-head">Words on the pages</h3>` + pageHits.slice(0, 200).map((h) => `<div class="ix-row words" data-index="${h.index}">
@@ -80,7 +87,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
       return;
     }
     if (q && !shown.length && read.length) {
-      list.innerHTML = `<div class="ix-empty"><p>Nothing in the index or on the ${read.length} page${read.length === 1 ? '' : 's'} read matches “${esc(q)}”.</p></div>`;
+      list.innerHTML = `<div class="ix-empty"><p>Nothing in the index, the typed notes or the pages read matches “${esc(q)}”.</p></div>`;
       return;
     }
     if (!all.length) {
@@ -101,6 +108,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
         : `<span class="ix-n">${esc(e.n)}</span><span class="ix-title">${e.title ? esc(e.title) : '<i>No title</i>'}</span>`;
       return `<div class="ix-row ${e.kind}" data-id="${esc(e.id)}">
         <button type="button" class="ix-go">${main}<span class="ix-page">p. ${e.num}</span></button>
+        <button type="button" class="icon-btn ix-copy" aria-label="Copy link" title="Copy link">${icon('link')}</button>
         <button type="button" class="icon-btn ix-edit" aria-label="Change">${icon('pen')}</button>
       </div>`;
     }).join('') + words;
@@ -132,8 +140,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
       goToEntry(first);
       return;
     }
-    const read = viewer.pages.map((p, index) => ({ index, num: p.num, text: textOf(p) })).filter((p) => p.text);
-    const hit = searchPages(read, search.value)[0];
+    const hit = searchPages(pageWords(), search.value)[0];
     if (hit) {
       close();
       search.blur();
@@ -153,6 +160,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     const entry = entries().find((x) => x.id === row.dataset.id);
     if (!entry) return;
     if (e.target.closest('.ix-edit')) editEntry(entry);
+    else if (e.target.closest('.ix-copy')) copyLink({ piece: pieceKey(entries(), entry) });
     else goToEntry(entry);
   });
 
@@ -646,6 +654,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {} }) {
     findHymn: (n) => findHymn(entries(), n),
     hasHymns: () => entries().some((e) => e.kind === 'hymn'),
     entryAt: (index, y) => entryAt(entries(), index, y),
+    entries,
   };
 }
 

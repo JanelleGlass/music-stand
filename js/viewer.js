@@ -14,6 +14,7 @@ import { openPdf, isCancel } from './pdfdoc.js';
 import { getFile, getFileBlob, getPosition, savePosition, getSettings, libraryEdited, checkDamaged } from './data.js';
 import { Ink } from './ink.js';
 import { Marks } from './marks.js';
+import { TextNotes } from './text-notes.js';
 import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes } from './paging.js';
 import { Flip } from './flip.js';
 import { fractionOf, scrollFor } from './scrub.js';
@@ -82,6 +83,7 @@ export class Viewer extends EventTarget {
     this.guideTimer = 0;
     this.ink = new Ink(this);
     this.marks = new Marks(this);
+    this.texts = new TextNotes(this);
     this.inputBlocked = false; // tap areas are being drawn (js/index-ui.js)
 
     this.scroller.addEventListener('scroll', () => this.#onScroll(), { passive: true });
@@ -112,7 +114,7 @@ export class Viewer extends EventTarget {
       for (let n = from; n <= to; n++) {
         const size = (meta.pageSizes && (meta.pageSizes[n - 1] || meta.pageSizes[0])) || [612, 792];
         // pw × ph: the page in the PDF; w × h: the part shown, turned (js/page-view.js).
-        pages.push({ fileId: seg.fileId, num: n, pw: size[0], ph: size[1], w: size[0], h: size[1], view: null, inkBox: null, top: 0, slot: 0, cssW: 0, cssH: 0, el: null, canvas: null, ink: null, links: null, task: null, renderedGen: -1, failed: false });
+        pages.push({ fileId: seg.fileId, num: n, pw: size[0], ph: size[1], w: size[0], h: size[1], view: null, inkBox: null, top: 0, slot: 0, cssW: 0, cssH: 0, el: null, canvas: null, ink: null, links: null, texts: null, task: null, renderedGen: -1, failed: false });
       }
     }
     const pos = await getPosition(key);
@@ -209,12 +211,14 @@ export class Viewer extends EventTarget {
   close() {
     this.#savePositionNow();
     this.cancelAnimation();
+    this.texts.close();
     this.ink.close();
     this.marks.close();
     this.openGen++;
     for (const p of this.pages) {
       this.#release(p);
       this.marks.hide(p);
+      this.texts.hide(p);
     }
     this.pages = [];
     this.want = [];
@@ -602,6 +606,7 @@ export class Viewer extends EventTarget {
     }
     for (const svg of p.el.querySelectorAll('svg.ink')) placeLayer(svg, p);
     this.marks.place(p);
+    this.texts.place(p);
   }
 
   #indexAt(y) {
@@ -687,9 +692,11 @@ export class Viewer extends EventTarget {
       if (keep) {
         this.ink.show(p);
         this.marks.show(p);
+        this.texts.show(p);
       } else {
         if (p.ink) this.ink.hide(p);
         if (p.links) this.marks.hide(p);
+        if (p.texts) this.texts.hide(p);
       }
     }
 
@@ -700,6 +707,11 @@ export class Viewer extends EventTarget {
       this.dispatchEvent(new CustomEvent('page', { detail: { index: cur, count: this.pages.length, num: p.num, fileId: p.fileId } }));
     }
     this.#pump();
+  }
+
+  // Whether page p is near enough the screen to have its layers.
+  isKept(p) {
+    return !!p.el && this.keepFrom != null && this.#inKeep(p);
   }
 
   #inKeep(p) {
@@ -870,7 +882,7 @@ export class Viewer extends EventTarget {
     sc.addEventListener('pointerdown', (e) => {
       // The Pencil writes notes, and so does a finger while the notes toolbar
       // says so; a hand resting while the Pencil writes doesn't move the music.
-      if (!e.isPrimary || this.inputBlocked || (e.pointerType === 'pen' && this.ink.pencilWrites) || this.ink.takesFingers || (e.pointerType === 'mouse' && this.ink.toolbarOpen) || this.ink.penDown) {
+      if (!e.isPrimary || this.inputBlocked || (e.pointerType === 'pen' && this.ink.pencilWrites) || this.ink.takesFingers || (e.pointerType === 'mouse' && this.ink.toolbarOpen && !this.ink.texting) || this.ink.penDown) {
         g = null;
         return;
       }
@@ -963,5 +975,7 @@ export class Viewer extends EventTarget {
   flushPosition() {
     this.#savePositionNow();
     this.ink.flush();
+    this.texts.saveNow();
+    this.marks.flush();
   }
 }

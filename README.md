@@ -139,6 +139,44 @@ text recognition (OCR), on the iPad itself:
   can search it as soon as they've synced. It isn't in backups; reading the
   pages again puts it back.
 
+## Links to a page or a piece
+
+A link can open a score at a page, or at an entry of its Index, from another
+app or web page (a lesson plan, a curriculum map):
+
+| Link | Opens |
+|---|---|
+| `…/music-stand/#/open/<score>?page=<n>` | the score at page *n* of its PDF |
+| `…/music-stand/#/open/<score>?piece=<number or title>` | the score at that Index entry, for example `?piece=2` or `?piece=Lightly%20Row` |
+| `…/music-stand/#/open/<score>` | the score, where you left it |
+
+For example
+`https://janelleglass.github.io/music-stand/#/open/Suzuki%20Violin%20Book%201?piece=Lightly%20Row`.
+The score's name and the piece are written as in a web address (a space is
+`%20`).
+
+- The score is found by its name in the library; capitals, accents and a
+  `.pdf` at the end don't matter. If the name only matches part of one
+  score's name, that score opens; if it matches several, Music Stand asks
+  which.
+- A number finds the Index entry with that number; words find the entry with
+  that title (or the closest match). The music opens where the entry starts,
+  as when you tap it in the Index. If the Index has no such entry, the score
+  opens at the top and says so.
+- **Copy link**: the link button in a score's top bar copies a link to the
+  page showing, the Index entry you're in, or the score. In the Index, the
+  link button on each row copies a link to that entry (by its title, or its
+  number if two entries share the title). Paste these where you want them.
+- If the score isn't in the library, Music Stand says so. With Google Drive
+  sync connected, it first waits for the sync to bring the score in.
+
+**On the iPad, a tapped link opens Music Stand in Safari, not in the Home
+Screen app**, and iPadOS keeps Safari's data apart from the Home Screen
+app's. Your scores reach Safari's copy through Google Drive sync: connect
+Google Drive in Safari's copy of Music Stand too (Settings › Google Drive),
+and give it time for its first sync. Markings and notes you make in either
+copy then reach the other through Drive.
+
 ## Adjusting pages: crop, turn and straighten
 
 The **crop button** in a score's top bar opens *Adjust pages* for the page
@@ -195,7 +233,8 @@ deleted (they show again with Whole page).
   highlight under them), undo and redo, and Done. Tap the chosen pen or
   highlighter again for its colours. The **⋯** menu has *Write with a finger*
   (one finger writes, two scroll; also for a mouse on a computer),
-  *Hide markings* for a clean copy, and *Clear markings on page N*.
+  *Hide markings* for a clean copy, and *Clear markings on page N*. The
+  **Text** tool types notes (below).
 - Markings are vector strokes on each page, so they keep their place at every
   zoom, and show light on dark pages in night mode.
 - Settings › Markings › **Apple Pencil marks right away** can be turned off,
@@ -212,6 +251,31 @@ deleted (they show again with Whole page).
   Backups include markings and folders. With Google Drive sync on, Drive
   keeps a deleted score's markings and folder places (by its PDF), so they
   come back if the same PDF is added again or restored from the Drive trash.
+
+### Typed notes
+
+- The **Text** tool (the **T** next to the eraser) types notes onto the
+  music. Tap the page where the note goes and a box opens there with the
+  keyboard; with the Apple Pencil you can also write in it by hand and let
+  Scribble turn it into text. The bar above it has the pen colours, three
+  text sizes, *Collapse*, *Delete* and *Done*. Tap the Text tool again to
+  choose the colour and size of new notes.
+- With the Text tool, tap a note to change it, or drag it to move it. While
+  you type, the round handle at its corner moves it and the square one at
+  its side sets its width. Undo and redo cover notes as they do strokes.
+- Each note is either **shown** (its text on the music) or **collapsed** to
+  a small note marker at that spot. When you're reading (the markings tools
+  closed), tap a note or marker to collapse or open it; that tap doesn't
+  turn the page, and winks and pedals turn pages as usual. Notes only change
+  with the Text tool, so a note can't be edited by accident while playing.
+- The **⋯** menu has *Collapse all typed notes* and *Show all typed notes*
+  for the score, and *Hide markings* hides notes along with the ink.
+- Notes stay on their music like strokes: at every zoom, in both ways of
+  turning pages and in night mode. They turn with a turned page, and a note in
+  a margin that is cropped away is hidden, not deleted.
+- The Index search finds words in typed notes, under *Words on the pages*.
+- Notes sync through Google Drive with the other markings and go into backups.
+  If two devices change the same note, the later change wins.
 
 ### Using more than one device: Google Drive sync
 
@@ -236,7 +300,7 @@ account:
 - If many scores disappear from Drive at once (for example the Music Stand
   folder went to the trash), nothing is deleted on the iPad until you choose,
   from the **Review** strip, to keep them or delete them.
-- **Markings, page adjustments, the index (and what Read all pages read), zoom, favorites and folders** sync too, in one small file in the
+- **Markings, typed notes, page adjustments, the index (and what Read all pages read), zoom, favorites and folders** sync too, in one small file in the
   Music Stand folder ("Music Stand notes and folders.json"; leave it as it
   is). A score is recognised by its PDF, so markings and folders come back if
   a deleted score is restored from the Drive trash. Strokes written on two
@@ -340,13 +404,15 @@ If you replace anything in `vendor/`, also bump `LIB_CACHE` in `sw.js`.
   again after the app has been closed. That's an iPadOS rule.
 - Password-protected PDFs can't be opened; remove the password first.
 - If quick Pencil strokes go missing, turn off Settings › Apple Pencil ›
-  Scribble on the iPad (it can take strokes meant for web pages).
+  Scribble on the iPad (it can take strokes meant for web pages). Typed notes
+  then need the keyboard.
 
 ## Project layout
 
 ```
 index.html, css/app.css      UI
-js/app.js                    startup, routing, wink → page turn, keys, wake lock
+js/app.js                    startup, routing (and links to a page or piece), wink → page turn, keys, wake lock
+js/links.js                  links: reading them, finding the score and the piece, making them (unit tested)
 js/viewer.js                 PDF viewer: scrolling or one page at a time (lazy rendering, animated turns, swipes)
 js/paging.js                 one page at a time: page fitting, swipes, how far a page has turned (unit tested)
 js/scrubber.js, js/scrub.js  the scroll bar down the right edge (its arithmetic is unit tested)
@@ -361,6 +427,7 @@ js/flip.js                   a page turning like a book's, drawn over the music
 js/library.js                library screen, favorites and folders bar
 js/lists.js                  favorites and folders (data)
 js/ink.js, js/ink-draw.js    writing on the music: Pencil input, SVG layers, eraser
+js/text-notes.js             typed notes: their layer on each page, the Text tool, shown or collapsed
 js/notes-store.js            the open score's markings: undo, redo, saving
 js/notes-ui.js               the markings tools in the top bar
 js/notes-merge.js            rules for combining markings and folders from two devices (unit tested)
