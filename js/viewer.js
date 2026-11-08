@@ -221,6 +221,7 @@ export class Viewer extends EventTarget {
     for (const d of this.docs.values()) d.then((doc) => doc.destroy()).catch(() => {});
     this.docs.clear();
     this.busy = false;
+    this.drewSome = false;
   }
 
   // ---- Page turning ----
@@ -712,6 +713,11 @@ export class Viewer extends EventTarget {
     const gen = this.openGen;
     try {
       await this.#render(next);
+      // The score opened without trouble (js/app.js stops watching for a crash).
+      if (gen === this.openGen && !this.drewSome) {
+        this.drewSome = true;
+        this.dispatchEvent(new CustomEvent('drawn'));
+      }
     } catch (e) {
       if (!isCancel(e) && gen === this.openGen) {
         console.warn('Render failed', e);
@@ -739,7 +745,10 @@ export class Viewer extends EventTarget {
           throw e;
         }
       })();
-      d.catch(() => this.docs.delete(fileId));
+      // A PDF that wouldn't open stays failed until the score is opened
+      // again: reading a big PDF for every page it tried to draw used enough
+      // memory for iPadOS to close the app.
+      d.catch(() => {});
       this.docs.set(fileId, d);
     }
     return d;

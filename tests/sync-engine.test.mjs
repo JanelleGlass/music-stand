@@ -383,6 +383,17 @@ test('a score whose PDF here can no longer be read is downloaded again, keeping 
   assert.equal((await sync(drive, b)).downloaded, 0);
 });
 
+test('a damaged score Drive doesn’t have is left alone, not uploaded', async () => {
+  const { drive, devices: [a] } = setup('A');
+  const id = a.add('Grace', 'grace-pdf');
+  a.files.get(id).damaged = true;
+  const r = await sync(drive, a);
+  assert.equal(r.uploaded, 0);
+  assert.equal(drive.live().length, 0);
+  assert.ok(r.lines.some((l) => l.includes('damaged')));
+  assert.deepEqual(a.names(), ['Grace']);
+});
+
 test('two Music Stand folders are merged into one', async () => {
   const { drive, devices: [a, b] } = setup('A', 'B');
   a.add('Grace', 'g');

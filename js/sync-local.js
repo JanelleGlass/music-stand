@@ -33,30 +33,18 @@ async function records() {
 // Scores whose PDF is stored here, with a content hash (worked out now for
 // any added without one).
 //
-// A score marked damaged (its PDF here couldn't be read: js/data.js
-// checkDamaged) comes with damaged: true, so the plan fetches Drive's copy
-// into it, keeping its name, place and markings. If it reads fine after
-// all, the mark goes.
+// A score marked damaged (its PDF here couldn't be read, or opening it closed
+// the app: js/data.js markDamaged) comes with damaged: true, so the plan
+// fetches Drive's copy into it, keeping its name, place and markings. Its
+// PDF here isn't read: that may be what closed the app.
 async function scores() {
   const stored = new Set(await db.getAllKeys('blobs'));
   const out = [];
   for (const f of await listFiles()) {
     if (!stored.has(f.id)) continue;
-    if (f.damaged) {
-      let ok = false;
-      try {
-        const blob = await getFileBlob(f.id);
-        ok = !!blob && (await sha256(await blob.arrayBuffer())) === f.hash;
-      } catch { /* still unreadable */ }
-      if (!ok) {
-        out.push({ id: f.id, name: f.name, hash: f.hash, addedAt: f.addedAt, damaged: true });
-        continue;
-      }
-      await db.update('files', f.id, (m) => {
-        if (!m || !m.damaged) return undefined;
-        const { damaged, ...rest } = m;
-        return rest;
-      });
+    if (f.damaged && f.hash) {
+      out.push({ id: f.id, name: f.name, hash: f.hash, addedAt: f.addedAt, damaged: true });
+      continue;
     }
     if (!f.hash) {
       const blob = await getFileBlob(f.id);

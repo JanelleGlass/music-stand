@@ -244,9 +244,14 @@ export async function checkDamaged(id) {
     ok = !!blob && (!meta.size || blob.size === meta.size) && (await sha256(await blob.arrayBuffer())) === meta.hash;
   } catch { /* not readable */ }
   if (ok) return false;
-  const wrote = await db.update('files', id, (m) => (m && m.hash === meta.hash && !m.damaged ? { ...m, damaged: true } : undefined));
-  if (wrote) libraryEdited(); // sync fetches it again
+  await markDamaged(id);
   return true;
+}
+
+// Google Drive sync fetches a fresh copy of the score's PDF.
+export async function markDamaged(id) {
+  const wrote = await db.update('files', id, (m) => (m && !m.damaged ? { ...m, damaged: true } : undefined));
+  if (wrote) libraryEdited();
 }
 
 // Rebuilds missing thumbnails (e.g. after restoring a backup).
