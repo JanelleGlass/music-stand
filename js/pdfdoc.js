@@ -16,6 +16,12 @@ export function openPdf(data) {
     standardFontDataUrl: base + 'standard_fonts/',
     isEvalSupported: false,
     enableXfa: false,
+    // Scans can hold images far bigger than any page is drawn (a 600 dpi
+    // page is ~35 million pixels, 140 MB once decoded). PDF.js shrinks
+    // images bigger than this as it decodes them, so a big scan doesn't run
+    // the iPad out of memory. A drawn page is at most 10 million pixels
+    // (js/viewer.js), so nothing visible is lost.
+    canvasMaxAreaInBytes: 4 * 16_000_000,
   }).promise;
 }
 
