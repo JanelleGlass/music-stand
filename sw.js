@@ -1,6 +1,6 @@
 // Offline support. Bump VERSION whenever you change any app file, so iPads
 // pick up the new version (the app then shows an "Update now" banner).
-const VERSION = '1.9.5';
+const VERSION = '1.10.0';
 const CORE_CACHE = `ms-core-${VERSION}`;
 // Third-party libraries change only when their files are replaced; bump LIB
 // then. Kept separate so app updates don't re-download ~15 MB of models.
@@ -24,6 +24,7 @@ const CORE = [
   'js/ink.js',
   'js/ink-draw.js',
   'js/library.js',
+  'js/links.js',
   'js/lists.js',
   'js/marks.js',
   'js/merge.js',
@@ -37,6 +38,7 @@ const CORE = [
   'js/scrub.js',
   'js/scrubber.js',
   'js/settings-ui.js',
+  'js/text-notes.js',
   'js/sync.js',
   'js/sync-data.js',
   'js/sync-engine.js',

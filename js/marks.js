@@ -58,7 +58,7 @@ export class Marks extends EventTarget {
     const out = [];
     this.viewer.pages.forEach((p, index) => {
       for (const m of this.#live(p.fileId, p.num)) {
-        if (m.kind !== 'link') out.push({ ...m, index, num: p.num, fileId: p.fileId });
+        if (m.kind === 'hymn' || m.kind === 'section') out.push({ ...m, index, num: p.num, fileId: p.fileId });
       }
     });
     return out;
@@ -66,6 +66,21 @@ export class Marks extends EventTarget {
 
   links(p) {
     return this.#live(p.fileId, p.num).filter((m) => m.kind === 'link');
+  }
+
+  // Typed notes (js/text-notes.js) on a page.
+  notes(p) {
+    return this.#live(p.fileId, p.num).filter((m) => m.kind === 'note');
+  }
+
+  // Every typed note of the score: [{ mark, fileId, num }].
+  allNotes() {
+    const out = [];
+    for (const [k, marks] of this.byPage) {
+      const i = k.lastIndexOf(':');
+      for (const m of marks) if (m.kind === 'note' && !m.gone) out.push({ mark: m, fileId: k.slice(0, i), num: Number(k.slice(i + 1)) });
+    }
+    return out;
   }
 
   get(id) {
@@ -101,6 +116,21 @@ export class Marks extends EventTarget {
     } else {
       this.#put(fileId, found.num, next);
     }
+    this.#changed();
+  }
+
+  // Puts a whole mark, keeping its id (a typed note as it is now, or as it
+  // was, for undo): it counts as changed just now.
+  put(fileId, num, mark) {
+    const k = key(fileId, num);
+    const prev = (this.byPage.get(k) || []).find((x) => x.id === mark.id);
+    this.#put(fileId, num, { ...mark, at: Math.max(Date.now(), (prev ? prev.at : 0) + 1, (mark.at || 0) + 1) });
+    this.#changed();
+  }
+
+  // Puts many marks as they are (with their at), telling everyone once.
+  putMany(list) {
+    for (const { fileId, num, mark } of list) this.#put(fileId, num, mark);
     this.#changed();
   }
 

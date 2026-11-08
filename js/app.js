@@ -1,4 +1,4 @@
-import { loadSettings, getSettings, updateSettings, onSettings, onLibraryChange, getFile, touchFile, requestPersistence, markDamaged } from './data.js';
+import { loadSettings, getSettings, updateSettings, onSettings, onLibraryChange, getFile, listFiles, touchFile, requestPersistence, markDamaged } from './data.js';
 import { initLibrary } from './library.js';
 import { Viewer } from './viewer.js';
 import { Scrubber } from './scrubber.js';
@@ -12,7 +12,9 @@ import { describePdfError } from './pdfdoc.js';
 import { takeRedirectResult, syncAccount } from './gdrive-auth.js';
 import { initSync } from './sync.js';
 import { initSyncUi, confirmAccountSwitch } from './sync-ui.js';
-import { $, icon, toast, promptDialog, isBusy } from './ui.js';
+import { parseOpenHash, findScore, findPiece, buildLink, pieceKey } from './links.js';
+import { entryAt } from './index-logic.js';
+import { $, esc, icon, toast, hideToast, promptDialog, actionSheet, openModal, copyText, isBusy } from './ui.js';
 
 const LAST_VIEW_KEY = 'ms:lastView';
 // The score on screen, { id, drawn } (drawn: its first page was drawn), kept
@@ -24,6 +26,8 @@ const VIEWING_KEY = 'ms:viewing';
 const OLD_OPENING_KEY = 'ms:opening'; // 1.9.4
 const RESUME_WITHIN_MS = 12 * 60 * 60 * 1000;
 const BAR_HIDE_MS = 3500;
+const LINK_WAIT_MS = 3 * 60 * 1000; // how long a link waits for Google Drive sync to bring its score
+const BOOT_AT = Date.now();
 
 let viewer;
 let camera;
@@ -39,6 +43,9 @@ let settingsOpen = false;
 let importing = false; // a backup is being imported
 let barTimer = 0;
 let wakeLock = null;
+let openName = ''; // the name of the score showing
+let syncedSinceBoot = false; // a Google Drive sync has finished since the app started
+let linkWait = null; // a link waiting for sync to bring its score: { stop }
 
 function injectIcons(root = document) {
   for (const el of root.querySelectorAll('[data-icon]')) {
@@ -54,9 +61,154 @@ function go(hash) {
 }
 
 async function route() {
+  stopLinkWait();
+  const link = parseOpenHash(location.hash);
+  if (link) {
+    await openLink(link);
+    return;
+  }
   const m = location.hash.match(/^#\/file\/(.+)$/);
   if (m) await showViewer(decodeURIComponent(m[1]));
   else showLibrary();
+}
+
+// ---------- Links: #/open/<score>?page=<n> or ?piece=<what> (js/links.js) ----------
+
+// Opens the score a link names, at its place. The address then becomes the
+// score's usual one, so Back, reopening after iPadOS closes the app and the
+// remembered place work as for any score. waited: why the wait for Google
+// Drive sync ended, if there was one.
+async function openLink(link, waited = null) {
+  const found = findScore(await listFiles(), link.score);
+  let file = found.file;
+  if (!file && found.choices.length) {
+    history.replaceState(null, '', '#/');
+    showLibrary();
+    const id = await actionSheet({
+      title: `Which “${link.score}”?`,
+      message: 'More than one score in this library has that name.',
+      actions: found.choices.map((f) => ({ label: f.name, value: f.id })),
+    });
+    file = id && found.choices.find((f) => f.id === id);
+    if (!file || location.hash !== '#/') return;
+  }
+  if (!file) {
+    history.replaceState(null, '', '#/');
+    showLibrary();
+    // A new Safari tab gets its scores from Google Drive: wait for the first sync.
+    if (!waited && syncAccount() && !syncedSinceBoot) waitForSync(link);
+    else toast(missingScore(link.score, waited), 9000);
+    return;
+  }
+  const place = link.page ? { page: link.page } : link.piece ? { piece: link.piece } : null;
+  history.replaceState(null, '', `#/file/${encodeURIComponent(file.id)}`);
+  if (viewerActive && viewer.key === file.id) {
+    goToPlace(place);
+    return;
+  }
+  if (viewerActive) showLibrary();
+  await showViewer(file.id, place);
+}
+
+function missingScore(name, waited) {
+  const it = `“${name}” isn’t in this library`;
+  if (!syncAccount()) return `${it}. If this is Safari, connect Google Drive in Settings so your scores sync here.`;
+  if (waited === 'tap' || waited === 'signin') return `${it} yet. Google Drive sync needs you to sign in: tap the cloud button, then open the link again.`;
+  if (waited === 'offline') return `${it} yet, and Google Drive can’t be reached. Open the link again when you’re online.`;
+  if (waited === 'slow' || waited === 'error') return `${it} yet. Google Drive sync hasn’t finished; open the link again when it has.`;
+  return `${it}. Check that the name in the link matches the score’s name here.`;
+}
+
+// Waits for Google Drive sync to bring the score, then tries the link once
+// more: as soon as a score with that very name arrives, or when the sync
+// finishes, or can't go on.
+function waitForSync(link) {
+  toast(`Looking for “${link.score}” in Google Drive…`, 0);
+  const stopped = new Set(['tap', 'signin', 'offline', 'error', 'decision', 'off']);
+  const wait = { offs: [], timer: 0 };
+  wait.stop = () => {
+    for (const off of wait.offs) off();
+    clearTimeout(wait.timer);
+    if (linkWait === wait) linkWait = null;
+    hideToast();
+  };
+  // (Later, not inside the status call that can come while listening starts.)
+  const finish = (why) => {
+    if (linkWait !== wait) return;
+    linkWait = null;
+    setTimeout(() => {
+      wait.stop();
+      openLink(link, why);
+    }, 0);
+  };
+  linkWait = wait;
+  wait.timer = setTimeout(() => finish('slow'), LINK_WAIT_MS);
+  wait.offs.push(onLibraryChange(async () => {
+    if (findScore(await listFiles(), link.score).exact) finish('found');
+  }));
+  wait.offs.push(sync.onStatus((st) => {
+    if (st.lastSync > BOOT_AT) finish('synced');
+    else if (stopped.has(st.state)) finish(st.state);
+  }));
+}
+
+function stopLinkWait() {
+  if (linkWait) linkWait.stop();
+}
+
+// Goes to a link's place in the open score: { page } or { piece }.
+function goToPlace(place) {
+  if (!place || !viewer.isOpen) return;
+  if (place.page) {
+    const i = viewer.pages.findIndex((p) => p.num === place.page);
+    if (i >= 0) viewer.goTo(i, 0);
+    else toast(`This score has no page ${place.page}: it has ${viewer.pages.length}.`, 4000);
+    return;
+  }
+  const entry = findPiece(viewer.marks.entries(), place.piece);
+  if (entry) {
+    viewer.goTo(entry.index, entry.y);
+  } else {
+    viewer.goTo(0, 0);
+    toast(`No “${place.piece}” in this score’s Index.`, 5000);
+  }
+}
+
+const appAddress = () => location.href.split('#')[0];
+
+// Copies a link to the open score (place: { page }, { piece } or none).
+function copyLinkTo(place) {
+  if (!viewerActive || !openName) return;
+  copyText(buildLink(appAddress(), openName, place || {}));
+}
+
+// Links to where the music is: the page, the Index entry, the score.
+function showLinks() {
+  if (!viewerActive || !viewer.isOpen) return;
+  const [index, y] = viewer.topPlace();
+  const page = viewer.pages[viewer.pageShowing()] || viewer.pages[index];
+  const entries = indexUi.entries();
+  const entry = entryAt(entries, index, y + 0.02, 'hymn') || entryAt(entries, index, y + 0.02, 'section');
+  const rows = [{ label: `Page ${page.num}`, place: { page: page.num } }];
+  if (entry) rows.push({ label: entry.kind === 'hymn' ? `${entry.n} ${entry.title || ''}`.trim() : entry.title, place: { piece: pieceKey(entries, entry) } });
+  rows.push({ label: 'The score, where it was left', place: null });
+  clearTimeout(barTimer);
+  openModal((dlg, finish) => {
+    dlg.innerHTML = `
+      <div class="modal-body">
+        <h2>Copy a link</h2>
+        <p>A link opens this score in Music Stand, at the place it names. Paste it into another app or page.</p>
+        <div class="link-rows">${rows.map((r, i) => `<div class="link-row"><span>${esc(r.label)}</span><button class="btn small primary" data-i="${i}">${icon('link')}Copy link</button></div>`).join('')}</div>
+      </div>
+      <div class="modal-actions"><button class="btn" data-close>Done</button></div>`;
+    dlg.querySelector('[data-close]').onclick = () => finish(null);
+    dlg.querySelectorAll('[data-i]').forEach((b) => {
+      b.onclick = () => {
+        copyLinkTo(rows[+b.dataset.i].place);
+        finish(null);
+      };
+    });
+  }).then(() => showBar());
 }
 
 function watchViewing(state) {
@@ -130,7 +282,9 @@ function showLibrary() {
   if (sync) sync.libraryShown();
 }
 
-async function showViewer(fileId) {
+// place: where to go once it's open, from a link ({ page } or { piece });
+// otherwise it opens where it was left.
+async function showViewer(fileId, place = null) {
   const meta = await getFile(fileId);
   if (!meta) {
     toast('That score is no longer in your library.');
@@ -142,6 +296,7 @@ async function showViewer(fileId) {
   $('#viewer').hidden = false;
   $('#v-title').textContent = meta.name;
   document.title = meta.name;
+  openName = meta.name;
   viewerActive = true;
   rememberView();
   showBar();
@@ -149,6 +304,7 @@ async function showViewer(fileId) {
   watchViewing({ id: fileId, drawn: false });
   try {
     await viewer.open({ key: fileId, segments: [{ fileId }] });
+    if (viewer.key === fileId) goToPlace(place);
     updateZoomLabel();
   } catch (e) {
     console.warn(e);
@@ -249,6 +405,7 @@ function setupViewerControls() {
   adjustUi = new AdjustUi(viewer, { onOpenChange: (open) => (open ? showBar(false) : showBar()) });
   $('#v-adjust').addEventListener('click', () => adjustUi.open());
   $('#v-index').addEventListener('click', () => indexUi.open());
+  $('#v-link').addEventListener('click', showLinks);
   $('#v-zoom-in').addEventListener('click', () => { viewer.zoomStep(1); showBar(); });
   $('#v-zoom-out').addEventListener('click', () => { viewer.zoomStep(-1); showBar(); });
   $('#v-wink').addEventListener('click', () => {
@@ -290,6 +447,9 @@ function setupViewerControls() {
       : 'This score’s PDF on this device is damaged. Delete it and add the PDF again.', 8000);
   });
   viewer.addEventListener('tap', (e) => {
+    // A typed note opens or collapses (with the Text tool: a note is made or
+    // changed), and the page doesn't turn.
+    if (viewer.texts.tapAt(e.detail.x, e.detail.y)) return;
     // With the markings tools open, fingers only scroll.
     if (notesUi.isOpen) return;
     // A tap area on a printed index goes where it says.
@@ -570,8 +730,8 @@ async function main() {
 
   viewer = new Viewer($('#viewer'));
   applyTurnMode();
-  notesUi = initNotesUi({ ink: viewer.ink, onOpenChange: (open) => (open ? showBar(false) : showBar()) });
-  indexUi = initIndexUi({ viewer, onOpenChange: (open) => (open ? showBar(false) : hideBar()) });
+  notesUi = initNotesUi({ ink: viewer.ink, texts: viewer.texts, onOpenChange: (open) => (open ? showBar(false) : showBar()) });
+  indexUi = initIndexUi({ viewer, onOpenChange: (open) => (open ? showBar(false) : hideBar()), copyLink: copyLinkTo });
   setupWink();
   setupViewerControls();
   library = initLibrary({ onOpen: (id) => go(`#/file/${encodeURIComponent(id)}`) });
@@ -594,6 +754,7 @@ async function main() {
     confirmSwitch: confirmAccountSwitch,
   });
   initSyncUi(sync);
+  sync.onStatus((st) => { if (st.lastSync > BOOT_AT) syncedSinceBoot = true; });
   $('#lib-settings').addEventListener('click', () => settingsUi.open());
 
   // Restoring a backup can remove the score that's open.

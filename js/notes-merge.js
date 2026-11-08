@@ -1,7 +1,7 @@
 // Rules for combining two copies of a score's notes, or of a folder, made on
 // different devices (Google Drive sync, backup Merge). No DOM, IndexedDB or
 // network here, so they can be unit tested (tests/notes-merge.test.mjs).
-import { mergeView } from './page-view.js';
+import { mergeView, normRot } from './page-view.js';
 //
 // Every rule is commutative, associative and idempotent: combining copies in
 // any order, any number of times, gives the same result, so devices agree
@@ -47,12 +47,23 @@ export function pageIsEmpty(p) {
 //   hymn     { kind: 'hymn', n: '245', title, y }
 //   section  { kind: 'section', title, y }
 //   link     { kind: 'link', box: [x, y, w, h], hymn: '245' } or { ..., page: 12 }
-// y is how far down the page it starts (0 to 1, of the page as it shows);
-// box is in the page's own units, as markings are (js/ink-draw.js).
+//   note     { kind: 'note', x, y, w, r, text, color, size, open }: a typed
+//            note (js/text-notes.js). Unlike the others it belongs to the
+//            music, as markings do: x, y (its top-left corner) and w (its
+//            width) are fractions of the page as it is in the PDF, before
+//            any crop or turn, and r is how the page was turned when it was
+//            written, so the text reads upright that way. size is 0, 1 or 2;
+//            open says whether the text shows or just a small marker.
+// For hymns and sections, y is how far down the page it starts (0 to 1, of
+// the page as it shows); box is in the page's own units, as markings are
+// (js/ink-draw.js).
 
 const MAX_TEXT = 200;
+const MAX_NOTE = 4000;
 const text = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT);
 const r4 = (n) => Math.round(n * 10000) / 10000;
+const frac = (n, lo = 0, hi = 1) => r4(Math.max(lo, Math.min(hi, Number(n) || 0)));
+export const NOTE_SIZES = 3;
 
 export function normMark(m) {
   if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !m.id) return null;
@@ -66,6 +77,22 @@ export function normMark(m) {
   if (m.kind === 'section') {
     const title = text(m.title);
     return title ? { id: m.id, at, kind: 'section', title, y } : null;
+  }
+  if (m.kind === 'note') {
+    const size = Math.round(Number(m.size));
+    return {
+      id: m.id,
+      at,
+      kind: 'note',
+      x: frac(m.x),
+      y,
+      w: frac(m.w || 0.25, 0.03, 1),
+      r: normRot(m.r || 0),
+      text: String(m.text == null ? '' : m.text).replace(/\r\n?/g, '\n').slice(0, MAX_NOTE),
+      color: /^#[0-9a-f]{6}$/i.test(m.color) ? m.color.toLowerCase() : '#1d1d1f',
+      size: size >= 0 && size < NOTE_SIZES ? size : 1,
+      open: m.open !== false,
+    };
   }
   if (m.kind === 'link') {
     const b = Array.isArray(m.box) && m.box.length === 4 && m.box.every((v) => typeof v === 'number' && Number.isFinite(v)) ? m.box : null;

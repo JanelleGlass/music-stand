@@ -97,14 +97,20 @@ export class Ink extends EventTarget {
     return !!this.active && this.active.pointerType === 'pen';
   }
 
+  // The Text tool is in use: a tap on the page makes a typed note
+  // (js/text-notes.js) and nothing draws.
+  get texting() {
+    return this.toolbarOpen && this.tool === 'text';
+  }
+
   // Finger taps write instead of turning pages.
   get takesFingers() {
-    return this.toolbarOpen && this.fingerDraws && !this.hidden && !this.viewer.inputBlocked;
+    return this.toolbarOpen && this.fingerDraws && !this.texting && !this.hidden && !this.viewer.inputBlocked;
   }
 
   // A Pencil touch on a page would write (rather than scroll).
   get pencilWrites() {
-    return !this.hidden && !this.viewer.inputBlocked && (getSettings().pencilDraws || this.toolbarOpen);
+    return !this.hidden && !this.texting && !this.viewer.inputBlocked && (getSettings().pencilDraws || this.toolbarOpen);
   }
 
   get canUndo() { return this.store.canUndo; }
@@ -126,8 +132,9 @@ export class Ink extends EventTarget {
 
   setToolbarOpen(open) {
     this.toolbarOpen = open;
-    // The eraser belongs to the tools: with them closed, the Pencil writes.
-    if (!open && this.tool === 'eraser') this.tool = getSettings().notesTool === 'hl' ? 'hl' : 'pen';
+    // The eraser and the Text tool belong to the tools: with them closed,
+    // the Pencil writes.
+    if (!open && (this.tool === 'eraser' || this.tool === 'text')) this.tool = getSettings().notesTool === 'hl' ? 'hl' : 'pen';
     if (!open) this.#endStroke(true);
     this.#applyTouchMode();
     this.dispatchEvent(new Event('state'));
@@ -147,8 +154,16 @@ export class Ink extends EventTarget {
     this.dispatchEvent(new Event('state'));
   }
 
-  undo() { this.#reveal(this.store.undo()); }
-  redo() { this.#reveal(this.store.redo()); }
+  // A typed note being written is finished first, so it can be undone too.
+  undo() {
+    this.viewer.texts.commit();
+    this.#reveal(this.store.undo());
+  }
+
+  redo() {
+    this.viewer.texts.commit();
+    this.#reveal(this.store.redo());
+  }
 
   // The page in the middle of the screen, which Clear page clears.
   centerPage() {
@@ -178,7 +193,7 @@ export class Ink extends EventTarget {
 
   #changed(op) {
     const p = this.pages.find((x) => x.fileId === op.fileId && x.num === op.num);
-    if (p) {
+    if (p && op.type !== 'note') {
       const strokes = this.store.strokes(p.fileId, p.num);
       if (!p.ink && strokes.length) this.#layersFor(p);
       else if (p.ink && op.fresh) {
@@ -194,7 +209,7 @@ export class Ink extends EventTarget {
     if (!this.pages.length) return false;
     if (e.pointerType === 'pen') return this.pencilWrites;
     if (e.pointerType === 'touch') return this.takesFingers && e.isPrimary && !this.twoFinger;
-    if (e.pointerType === 'mouse') return this.toolbarOpen && !this.hidden && !this.viewer.inputBlocked && e.button === 0;
+    if (e.pointerType === 'mouse') return this.toolbarOpen && !this.texting && !this.hidden && !this.viewer.inputBlocked && e.button === 0;
     return false;
   }
 

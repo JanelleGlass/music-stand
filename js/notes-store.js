@@ -32,6 +32,10 @@ export class NotesStore {
     this.saving = Promise.resolve();
     this.onChange = () => {};
     this.onError = () => {};
+    // Typed notes are kept with the index marks (js/marks.js); their changes
+    // join the undo history here. applyNote(op) puts op.after, or takes
+    // op.before away when op.after is null.
+    this.applyNote = () => {};
     this.failing = false; // saves are failing; the person has been told
     this.retryMs = RETRY_MS;
     this.gen = 0; // bumped when unsaved pages are dropped
@@ -77,6 +81,17 @@ export class NotesStore {
     if (gone.length) this.#apply({ type: 'erase', fileId, num, strokes: gone });
   }
 
+  // A typed note changed (before, after: the whole note, or null when it
+  // was made or deleted). It is already in place: this lets it be undone.
+  recordNote(fileId, num, before, after) {
+    if (!before && !after) return;
+    const op = { type: 'note', fileId, num, before, after };
+    this.undoStack.push(op);
+    if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
+    this.redoStack = [];
+    this.onChange(op);
+  }
+
   undo() {
     const op = this.undoStack.pop();
     if (!op) return null;
@@ -101,6 +116,7 @@ export class NotesStore {
   // be on other devices), so undoing an erase draws copies. Later undos and
   // redos that name the old stroke act on its copy.
   #invert(op) {
+    if (op.type === 'note') return { ...op, before: op.after, after: op.before };
     if (op.type === 'add') return { ...op, type: 'erase', fresh: false, strokes: op.strokes.map((s) => ({ ...s, id: this.#current(s.id) })) };
     return {
       ...op,
@@ -128,6 +144,10 @@ export class NotesStore {
   }
 
   #do(op) {
+    if (op.type === 'note') {
+      this.applyNote(op);
+      return;
+    }
     const key = pageKey(op.fileId, op.num);
     const page = this.pages.get(key) || { strokes: [], erased: [] };
     const change = op.type === 'add'
