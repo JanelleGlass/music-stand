@@ -32,11 +32,32 @@ async function records() {
 
 // Scores whose PDF is stored here, with a content hash (worked out now for
 // any added without one).
+//
+// A score marked damaged (its PDF here couldn't be read: js/data.js
+// checkDamaged) comes with damaged: true, so the plan fetches Drive's copy
+// into it, keeping its name, place and markings. If it reads fine after
+// all, the mark goes.
 async function scores() {
   const stored = new Set(await db.getAllKeys('blobs'));
   const out = [];
   for (const f of await listFiles()) {
     if (!stored.has(f.id)) continue;
+    if (f.damaged) {
+      let ok = false;
+      try {
+        const blob = await getFileBlob(f.id);
+        ok = !!blob && (await sha256(await blob.arrayBuffer())) === f.hash;
+      } catch { /* still unreadable */ }
+      if (!ok) {
+        out.push({ id: f.id, name: f.name, hash: f.hash, addedAt: f.addedAt, damaged: true });
+        continue;
+      }
+      await db.update('files', f.id, (m) => {
+        if (!m || !m.damaged) return undefined;
+        const { damaged, ...rest } = m;
+        return rest;
+      });
+    }
     if (!f.hash) {
       const blob = await getFileBlob(f.id);
       const hash = blob && (await sha256(await blob.arrayBuffer()));
@@ -57,16 +78,23 @@ export const localStore = {
   // Resolves to the id the PDF is now stored under: fields.id, or the score
   // that already has the same PDF (added while it downloaded). null if
   // fields.id is taken by another PDF.
+  //
+  // The blob the engine passes is made of the download's pieces, which are
+  // themselves stored in IndexedDB and deleted right after. Safari can keep
+  // a stored Blob tied to the files behind the Blobs it was made from, so
+  // once the pieces go, the score's PDF can no longer be read and its pages
+  // stay blank. storePdf makes a fresh Blob from buf's bytes instead.
   async addScore(blob, buf, fields) {
-    const { meta, existing } = await storePdf(buf, fields, { blob });
+    const { meta, existing } = await storePdf(buf, fields);
     if (!meta) return existing;
     notifyLibraryChange();
     return meta.id;
   },
 
-  // A new version of a score's PDF from Drive: same id, name and reading place.
+  // A new version of a score's PDF from Drive (or a fresh copy of one whose
+  // PDF here can't be read): same id, name and reading place.
   async replaceContent(id, blob, buf, hash) {
-    const { meta } = await storePdf(buf, { id, hash }, { blob, replace: true });
+    const { meta } = await storePdf(buf, { id, hash }, { replace: true });
     if (meta) notifyLibraryChange();
     return meta ? id : null;
   },
