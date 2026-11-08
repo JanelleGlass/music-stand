@@ -124,15 +124,17 @@ function cleanName(filename) {
 // Reads a PDF's pages and stores it with its thumbnail. Reading a big PDF
 // takes seconds, so the store happens in one transaction that looks at the
 // library as it is by then. fields: id, name, hash, addedAt. Options:
-//   blob     the same bytes as buf in a Blob that is safe to keep, if any
 //   replace  new content for the score fields.id, keeping its name and
 //            reading details; nothing is stored if it was deleted meanwhile
 // Resolves to { meta, existing }. meta is null when nothing was stored;
 // existing is then the id of a score that already has this PDF, if any.
-export async function storePdf(buf, fields, { onProgress, blob = null, replace = false } = {}) {
-  // Copy into a fresh Blob: iOS can discard the temp file behind a picked File.
-  // (The Blob constructor copies the bytes, so PDF.js may take ownership of buf.)
-  if (!blob) blob = new Blob([buf], { type: 'application/pdf' });
+export async function storePdf(buf, fields, { onProgress, replace = false } = {}) {
+  // Always a fresh Blob made from the bytes: iOS can discard the temp file
+  // behind a picked File, and a Blob made from Blobs that came out of
+  // IndexedDB (a download's pieces) can stop being readable once those are
+  // deleted. The Blob constructor copies the bytes, so PDF.js may take
+  // ownership of buf.
+  const blob = new Blob([buf], { type: 'application/pdf' });
   const pdf = await openPdf(buf);
   try {
     const pageSizes = await readPageSizes(pdf, onProgress);
@@ -146,6 +148,7 @@ export async function storePdf(buf, fields, { onProgress, blob = null, replace =
         if (replace) {
           if (!current) return;
           out.meta = { ...current, hash: fields.hash, ...read };
+          delete out.meta.damaged;
         } else {
           const same = req.result.find((f) => f.id === fields.id || (fields.hash && f.hash === fields.hash));
           if (same) {
@@ -226,6 +229,24 @@ export async function removeFile(id, tomb = null) {
     // What its pages say (js/ocr.js).
     s.kv.delete(IDBKeyRange.bound(`ocr:${id}:`, `ocr:${id}:\uffff`));
   });
+}
+
+// Called when a score's PDF wouldn't open. True if what is stored here can't
+// be read, or isn't the PDF that was stored (a score downloaded by an older
+// version could lose its PDF this way). The score is then marked damaged,
+// and Google Drive sync fetches a fresh copy (js/sync-local.js).
+export async function checkDamaged(id) {
+  const meta = await getFile(id);
+  if (!meta || !meta.hash || !crypto.subtle) return false;
+  let ok = false;
+  try {
+    const blob = await getFileBlob(id);
+    ok = !!blob && (!meta.size || blob.size === meta.size) && (await sha256(await blob.arrayBuffer())) === meta.hash;
+  } catch { /* not readable */ }
+  if (ok) return false;
+  const wrote = await db.update('files', id, (m) => (m && m.hash === meta.hash && !m.damaged ? { ...m, damaged: true } : undefined));
+  if (wrote) libraryEdited(); // sync fetches it again
+  return true;
 }
 
 // Rebuilds missing thumbnails (e.g. after restoring a backup).

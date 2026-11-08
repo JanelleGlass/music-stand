@@ -11,7 +11,7 @@
 // the pages turn over it like a book's (js/flip.js). A sideways drag turns
 // the page under the finger.
 import { openPdf, isCancel } from './pdfdoc.js';
-import { getFile, getFileBlob, getPosition, savePosition, getSettings, libraryEdited } from './data.js';
+import { getFile, getFileBlob, getPosition, savePosition, getSettings, libraryEdited, checkDamaged } from './data.js';
 import { Ink } from './ink.js';
 import { Marks } from './marks.js';
 import { fitPage, pageAt, swipeTurn, flipProgress, flipCompletes } from './paging.js';
@@ -729,9 +729,15 @@ export class Viewer extends EventTarget {
     let d = this.docs.get(fileId);
     if (!d) {
       d = (async () => {
-        const blob = await getFileBlob(fileId);
-        if (!blob) throw new Error('The PDF data for this file is missing.');
-        return openPdf(await blob.arrayBuffer());
+        try {
+          const blob = await getFileBlob(fileId);
+          if (!blob) throw new Error('The PDF data for this file is missing.');
+          return await openPdf(await blob.arrayBuffer());
+        } catch (e) {
+          // The PDF stored here may be damaged: Google Drive sync can fetch it again.
+          if (await checkDamaged(fileId).catch(() => false)) this.dispatchEvent(new CustomEvent('damaged', { detail: fileId }));
+          throw e;
+        }
       })();
       d.catch(() => this.docs.delete(fileId));
       this.docs.set(fileId, d);

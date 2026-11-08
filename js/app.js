@@ -9,7 +9,7 @@ import { initNotesUi } from './notes-ui.js';
 import { initIndexUi } from './index-ui.js';
 import { getFolders, scoresIn, setMember, FAVORITES } from './lists.js';
 import { describePdfError } from './pdfdoc.js';
-import { takeRedirectResult } from './gdrive-auth.js';
+import { takeRedirectResult, syncAccount } from './gdrive-auth.js';
 import { initSync } from './sync.js';
 import { initSyncUi, confirmAccountSwitch } from './sync-ui.js';
 import { $, icon, toast, promptDialog, isBusy } from './ui.js';
@@ -232,6 +232,11 @@ function setupViewerControls() {
   // The scroll bar keeps the top bar up while it's held.
   scrubber = new Scrubber($('#v-scrub'), viewer, { onStart: () => showBar(false), onEnd: () => showBar() });
   viewer.addEventListener('zoom', updateZoomLabel);
+  viewer.addEventListener('damaged', () => {
+    toast(syncAccount()
+      ? 'This score’s PDF on this device is damaged. Close the score and Google Drive sync will download it again.'
+      : 'This score’s PDF on this device is damaged. Delete it and add the PDF again.', 8000);
+  });
   viewer.addEventListener('tap', (e) => {
     // With the markings tools open, fingers only scroll.
     if (notesUi.isOpen) return;

@@ -53,7 +53,8 @@ export function pickFolder(listing) {
   return best;
 }
 
-// local: [{ id, name, hash }]
+// local: [{ id, name, hash, damaged? }] (damaged: the PDF here can't be read,
+//   so Drive's copy is fetched again)
 // links: Map scoreId → { driveId, name }: the Drive file each score was last
 //   synced with, and the name both sides had then (null: don't know).
 // tombs: Map scoreId → { hash, at }: scores deleted here since the last sync.
@@ -78,7 +79,8 @@ export function pickFolder(listing) {
 //                file in Drive. rename is 'local', 'remote' or null; name is
 //                the name both end up with; expect is the name here now.
 //   replace      [{ id, driveId }]: Drive has a different PDF for the score
-//                (a new version was uploaded in Drive): fetch it
+//                (a new version was uploaded in Drive), or the one here is
+//                damaged: fetch it
 //   deleteLocal  [{ id, name, driveId, linked, folder }]: synced before, and now
 //                in the Drive trash (driveId) or missing from the listing
 //                (driveId null; linked is the Drive id to check). folder: the
@@ -173,7 +175,8 @@ export function planSync({ local, links, tombs, listing, uploads = new Map(), re
       else if (base !== null && remote === base) rename = 'remote';
       else rename = 'local';
       plan.matches.push({ id: s.id, driveId: r.id, rename, name: rename === 'remote' ? s.name : remote, expect: s.name });
-      if (s.hash && hashOf(r) && hashOf(r) !== s.hash) plan.replace.push({ id: s.id, driveId: r.id });
+      // A new version in Drive, or the PDF here can't be read any more.
+      if (s.hash && hashOf(r) && (hashOf(r) !== s.hash || s.damaged)) plan.replace.push({ id: s.id, driveId: r.id });
       continue;
     }
     // Synced before and no copy left in Drive: deleted elsewhere, whether it

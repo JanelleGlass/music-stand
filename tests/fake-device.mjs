@@ -220,6 +220,7 @@ export class FakeDevice {
     if (!f) return null;
     f.hash = hash;
     f.size = buf.byteLength;
+    delete f.damaged;
     this.blobs.set(id, new Uint8Array(buf));
     return id;
   }

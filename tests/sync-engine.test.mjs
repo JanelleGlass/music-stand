@@ -364,6 +364,25 @@ test('a new version of a PDF uploaded in Drive reaches the iPads', async () => {
   assert.equal(new TextDecoder().decode(a.blobs.get(id)), 'better scan');
 });
 
+test('a score whose PDF here can no longer be read is downloaded again, keeping its place', async () => {
+  const { drive, devices: [a, b] } = setup('A', 'B');
+  const id = a.add('Grace', 'grace-pdf');
+  await sync(drive, a);
+  await sync(drive, b);
+  // Safari lost the stored PDF; the viewer marked the score damaged.
+  b.blobs.set(id, new Uint8Array(0));
+  b.files.get(id).damaged = true;
+  const r = await sync(drive, b);
+  assert.equal(r.downloaded, 1);
+  assert.equal(r.uploaded, 0);
+  assert.deepEqual(b.names(), ['Grace']);
+  assert.equal(new TextDecoder().decode(b.blobs.get(id)), 'grace-pdf');
+  assert.equal(b.files.get(id).damaged, undefined);
+  assert.equal(drive.live().length, 1);
+  // Nothing more to do.
+  assert.equal((await sync(drive, b)).downloaded, 0);
+});
+
 test('two Music Stand folders are merged into one', async () => {
   const { drive, devices: [a, b] } = setup('A', 'B');
   a.add('Grace', 'g');
