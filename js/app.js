@@ -15,10 +15,13 @@ import { initSyncUi, confirmAccountSwitch } from './sync-ui.js';
 import { $, icon, toast, promptDialog, isBusy } from './ui.js';
 
 const LAST_VIEW_KEY = 'ms:lastView';
-// The score being opened, until its first page is drawn. Still there at the
-// next start-up means opening it closed the app (iPadOS ran out of memory, or
-// Safari couldn't read its PDF).
-const OPENING_KEY = 'ms:opening';
+// The score on screen, { id, drawn } (drawn: its first page was drawn), kept
+// while the app is in view. Still there at the next start-up means the app
+// closed while showing it: iPadOS ran out of memory, or Safari couldn't read
+// its PDF. (A score left open in the background, which iPadOS may close
+// without saying, doesn't count: it is taken away while the app is hidden.)
+const VIEWING_KEY = 'ms:viewing';
+const OLD_OPENING_KEY = 'ms:opening'; // 1.9.4
 const RESUME_WITHIN_MS = 12 * 60 * 60 * 1000;
 const BAR_HIDE_MS = 3500;
 
@@ -56,29 +59,40 @@ async function route() {
   else showLibrary();
 }
 
-function watchOpening(fileId) {
+function watchViewing(state) {
   try {
-    if (fileId) localStorage.setItem(OPENING_KEY, fileId);
-    else localStorage.removeItem(OPENING_KEY);
+    if (state) localStorage.setItem(VIEWING_KEY, JSON.stringify(state));
+    else localStorage.removeItem(VIEWING_KEY);
   } catch { /* storage blocked */ }
 }
 
-// Opening a score closed the app last time: start in the library instead of
-// opening it again (and again), and have Google Drive sync fetch a fresh copy
-// of its PDF. Resolves to the score's id, or null.
-async function recoverFromCrash() {
-  let id = null;
+function viewingNow() {
   try {
-    id = localStorage.getItem(OPENING_KEY);
-    if (!id) return null;
-    localStorage.removeItem(OPENING_KEY);
+    return JSON.parse(localStorage.getItem(VIEWING_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+// A score closed the app last time: start in the library instead of opening
+// it again (and again: Safari reloads the same address after a crash). If no
+// page of it was ever drawn, its PDF here may be damaged, so Google Drive
+// sync fetches a fresh copy. Resolves to { id, drawn }, or null.
+async function recoverFromCrash() {
+  let last = null;
+  try {
+    const old = localStorage.getItem(OLD_OPENING_KEY);
+    localStorage.removeItem(OLD_OPENING_KEY);
+    last = viewingNow() || (old ? { id: old, drawn: false } : null);
+    if (!last || !last.id) return null;
+    localStorage.removeItem(VIEWING_KEY);
     localStorage.removeItem(LAST_VIEW_KEY);
   } catch {
     return null;
   }
   if (location.hash.startsWith('#/file/')) history.replaceState(null, '', '#/');
-  await markDamaged(id).catch(() => {});
-  return id;
+  if (!last.drawn) await markDamaged(last.id).catch(() => {});
+  return last;
 }
 
 function rememberView() {
@@ -98,7 +112,7 @@ function resumeLastView() {
 }
 
 function showLibrary() {
-  watchOpening(null);
+  watchViewing(null);
   if (viewerActive) {
     notesUi.close();
     indexUi.reset();
@@ -132,7 +146,7 @@ async function showViewer(fileId) {
   rememberView();
   showBar();
   updateZoomLabel();
-  watchOpening(fileId);
+  watchViewing({ id: fileId, drawn: false });
   try {
     await viewer.open({ key: fileId, segments: [{ fileId }] });
     updateZoomLabel();
@@ -264,8 +278,12 @@ function setupViewerControls() {
   scrubber = new Scrubber($('#v-scrub'), viewer, { onStart: () => showBar(false), onEnd: () => showBar() });
   viewer.addEventListener('zoom', updateZoomLabel);
   // The first page was drawn, or drawing failed without closing the app.
-  viewer.addEventListener('drawn', () => watchOpening(null));
-  viewer.addEventListener('error', () => watchOpening(null));
+  const drawn = () => {
+    const v = viewingNow();
+    if (v && !v.drawn) watchViewing({ ...v, drawn: true });
+  };
+  viewer.addEventListener('drawn', drawn);
+  viewer.addEventListener('error', drawn); // a page failed, but the app stayed up
   viewer.addEventListener('damaged', () => {
     toast(syncAccount()
       ? 'This score’s PDF on this device is damaged. Close the score and Google Drive sync will download it again.'
@@ -590,10 +608,19 @@ async function main() {
     if (document.hidden) {
       viewer.flushPosition();
       rememberView();
+      // iPadOS may close the app in the background: not a crash.
+      const v = viewingNow();
+      if (v) {
+        hiddenViewing = v;
+        watchViewing(null);
+      }
     } else {
       requestWakeLock();
+      if (hiddenViewing && viewerActive) watchViewing(hiddenViewing);
+      hiddenViewing = null;
     }
   });
+  let hiddenViewing = null;
   window.addEventListener('pagehide', () => viewer.flushPosition());
 
   // The rest of starting up, once (it may wait for a trip to Google).
@@ -604,9 +631,13 @@ async function main() {
     $('#boot-note').hidden = true;
     await route();
     if (crashed) {
-      toast(syncAccount()
-        ? 'A score closed the app while it opened, so Music Stand started in the library. Google Drive sync will download a fresh copy of it.'
-        : 'A score closed the app while it opened, so Music Stand started in the library. If it happens again, delete the score and add the PDF again.', 9000);
+      const name = ((await getFile(crashed.id).catch(() => null)) || {}).name;
+      const which = name ? `“${name}”` : 'A score';
+      let more;
+      if (crashed.drawn) more = 'It may be too big for this iPad’s memory.';
+      else if (syncAccount()) more = 'Google Drive sync will download a fresh copy of it.';
+      else more = 'If it happens again, delete it and add the PDF again.';
+      toast(`${which} closed the app, so Music Stand started in the library. ${more}`, 10000);
     }
     sync.started(result);
     setupServiceWorker();

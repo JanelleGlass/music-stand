@@ -26,6 +26,9 @@ const PAD = 8;                  // px above the first and below the last page
 const MAX_DPR = 2;
 const MAX_PIXELS = 10_000_000;  // per canvas
 const MAX_RENDERED = 7;
+// All drawn pages together (4 bytes a pixel): Safari on iPad has a limit on
+// canvas memory, and going past it leaves pages blank or closes the app.
+const MAX_TOTAL_PIXELS = 36_000_000;
 const DRAG_START_PX = 10;       // one page at a time: a touch that moves this far is a swipe, not a tap
 const VELOCITY_MS = 100;        // a let-go's speed is measured over this last stretch of the drag
 const FLIP_REST_MS = 450;       // a page let go mid-turn takes up to this long to finish (or fall back)
@@ -707,7 +710,11 @@ export class Viewer extends EventTarget {
     // Don't start new renders mid-animation or mid-stroke; the look-ahead
     // pages are usually ready.
     if (this.busy || this.anim || this.ink.drawing) return;
-    const next = this.want.find((p) => p.renderedGen !== this.layoutGen && !p.failed);
+    // Pages on screen are always drawn; the ones ahead and behind only while
+    // they fit in the canvas memory budget.
+    const used = this.pages.reduce((n, p) => n + (p.canvas ? p.canvas.width * p.canvas.height : 0), 0);
+    const next = this.want.find((p) => p.renderedGen !== this.layoutGen && !p.failed &&
+      (this.#onScreen(p) || used - (p.canvas ? p.canvas.width * p.canvas.height : 0) + this.#pixelsFor(p) <= MAX_TOTAL_PIXELS));
     if (!next) return;
     this.busy = true;
     const gen = this.openGen;
@@ -809,6 +816,17 @@ export class Viewer extends EventTarget {
     this.#enforceLimit();
   }
 
+  #onScreen(p) {
+    const top = this.scroller.scrollTop;
+    return p.top + p.cssH >= top && p.top <= top + this.scroller.clientHeight;
+  }
+
+  // About how many pixels drawing page p takes (as #render works it out).
+  #pixelsFor(p) {
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    return Math.min(MAX_PIXELS, p.cssW * dpr * p.cssH * dpr);
+  }
+
   #release(p) {
     if (p.task) {
       p.task.cancel();
@@ -825,10 +843,20 @@ export class Viewer extends EventTarget {
 
   #enforceLimit() {
     const rendered = this.pages.filter((p) => p.canvas);
-    if (rendered.length <= MAX_RENDERED) return;
+    const area = (p) => p.canvas.width * p.canvas.height;
+    let total = rendered.reduce((n, p) => n + area(p), 0);
+    if (rendered.length <= MAX_RENDERED && total <= MAX_TOTAL_PIXELS) return;
     const mid = this.scroller.scrollTop + this.scroller.clientHeight / 2;
+    // Farthest from the middle of the screen first; the nearest always stays.
     rendered.sort((a, b) => Math.abs(b.top + b.cssH / 2 - mid) - Math.abs(a.top + a.cssH / 2 - mid));
-    for (const p of rendered.slice(0, rendered.length - MAX_RENDERED)) this.#release(p);
+    let count = rendered.length;
+    for (const p of rendered.slice(0, -1)) {
+      if (count <= MAX_RENDERED && total <= MAX_TOTAL_PIXELS) break;
+      if (this.#onScreen(p)) continue;
+      total -= area(p);
+      count--;
+      this.#release(p);
+    }
   }
 
   // ---- Taps and swipes ----
