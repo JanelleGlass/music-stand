@@ -192,6 +192,10 @@ export function planSync({ local, links, tombs, listing, uploads = new Map(), re
       plan.deleteLocal.push({ id: s.id, name: s.name, driveId: before ? before.id : null, linked: link ? link.driveId : null, folder: parent ? parent.id : null });
       continue;
     }
+    if (s.damaged) {
+      plan.skipped.push({ id: s.id, why: 'its PDF on this device is damaged and Google Drive has no copy' });
+      continue;
+    }
     plan.upload.push(s.id);
   }
 
