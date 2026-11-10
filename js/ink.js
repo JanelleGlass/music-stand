@@ -9,6 +9,7 @@
 import { getSettings, onSettings } from './data.js';
 import { NotesStore, newStrokeId } from './notes-store.js';
 import { shownToPage } from './page-view.js';
+import { chosen } from './colors.js';
 import { PAGE_W, PENS, HIGHLIGHTERS, makeLayers, removeLayers, liveLayer, strokeEl, drawAll, removeStrokeEl, pathData, strokesToErase, decimate, simplify } from './ink-draw.js';
 
 const ERASER_REACH = 7; // page units around the eraser tip
@@ -126,8 +127,8 @@ export class Ink extends EventTarget {
   // The pen or highlighter look in use.
   look() {
     const s = getSettings();
-    if (this.tool === 'hl') return { tool: 'hl', color: HIGHLIGHTERS.colors[s.hlColor] || HIGHLIGHTERS.colors[0], w: HIGHLIGHTERS.width };
-    return { tool: 'pen', color: PENS.colors[s.penColor] || PENS.colors[0], w: PENS.widths[s.penWidth] ?? PENS.widths[1] };
+    if (this.tool === 'hl') return { tool: 'hl', color: chosen(s, 'hlColor'), w: HIGHLIGHTERS.width };
+    return { tool: 'pen', color: chosen(s, 'penColor'), w: PENS.widths[s.penWidth] ?? PENS.widths[1] };
   }
 
   setToolbarOpen(open) {
