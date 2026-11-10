@@ -498,6 +498,28 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 .swatch { width: 40px; height: 40px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; background: transparent; }
 .swatch i { width: 26px; height: 26px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
 .swatch[aria-checked="true"] { border-color: var(--bar-text); }
+/* Any other colour: a rainbow, or the colour in use when it isn't on the list. */
+.swatch.other i { background: conic-gradient(from 90deg, #ff3b30, #ffcc00, #34c759, #5ac8fa, #1f5fd1, #af52de, #ff3b30); position: relative; }
+.swatch.other:not(.own) i::after { content: '+'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 700 18px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 0 3px rgba(0, 0, 0, 0.6); }
+.swatch.other[aria-expanded="true"]:not([aria-checked="true"]) { border-color: rgba(255, 255, 255, 0.35); }
+.swatch.removing { position: relative; }
+.swatch.removing::after {
+  content: '×'; position: absolute; top: 0; right: 0; width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font: 700 14px/1 system-ui, sans-serif;
+  background: var(--danger, #d0312d); color: #fff; box-shadow: 0 0 0 2px var(--bar);
+}
+.swatch.removing i { opacity: 0.75; }
+.color-more { flex-basis: 100%; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 2px 2px; margin-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.18); }
+.color-well { width: 52px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: transparent; cursor: pointer; }
+.color-well::-webkit-color-swatch-wrapper { padding: 0; }
+.color-well::-webkit-color-swatch { border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; }
+.color-well::-moz-color-swatch { border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; }
+.hex-field { display: inline-flex; align-items: center; height: 40px; padding: 0 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.12); font: 600 16px ui-monospace, Menlo, monospace; }
+.hex-field span { opacity: 0.6; }
+.hex-field input { width: 7ch; border: 0; padding: 0 0 0 2px; background: transparent; color: inherit; font: inherit; text-transform: uppercase; outline: none; }
+.color-more .btn.small { background: rgba(255, 255, 255, 0.12); border-color: transparent; color: inherit; }
+.color-more .btn.small[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.color-hint { flex-basis: 100%; margin: 2px 4px 0; font-size: 13px; opacity: 0.75; }
 .size-btn { width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; color: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .size-btn i { display: block; border-radius: 50%; background: currentColor; }
 .size-btn[aria-checked="true"] { background: rgba(255, 255, 255, 0.18); }

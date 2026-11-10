@@ -24,10 +24,12 @@ export const DEFAULT_SETTINGS = {
   // Notes
   pencilDraws: true,       // Apple Pencil writes without opening the notes toolbar
   notesTool: 'pen',        // 'pen' | 'hl' (last one used; the eraser and the Text tool aren't kept)
-  penColor: 0,
+  penColor: '#1d1d1f',     // the colours in use ('#rrggbb'; a number in versions before 1.11.0, js/colors.js)
   penWidth: 1,
-  hlColor: 0,
-  textColor: 0,            // typed notes: the colour and size (0 small, 1 medium, 2 large) of a new one
+  hlColor: '#ffd60a',
+  textColor: '#1d1d1f',    // typed notes: the colour and size (0 small, 1 medium, 2 large) of a new one
+  penColors: null,         // the colours offered (pen and typed notes, highlighter); null: the built-in ones
+  hlColors: null,
   textSize: 1,
   // Adjust pages
   cropShape: 'free',       // 'free' | 'page' (the page's own shape) | 'screen' (fills the screen)

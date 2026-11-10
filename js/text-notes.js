@@ -15,7 +15,8 @@
 // be dragged; the one being written has a box to type in (Apple Pencil
 // Scribble works there), a handle to move it and one to set its width.
 import { getSettings, updateSettings, onSettings } from './data.js';
-import { PAGE_W, PENS, inkColor, placeLayer } from './ink-draw.js';
+import { PAGE_W, inkColor, placeLayer } from './ink-draw.js';
+import { palette, chosen, colorName } from './colors.js';
 import { shownToPage } from './page-view.js';
 import { newMarkId } from './marks.js';
 
@@ -23,7 +24,6 @@ const NEW_W = 0.26; // a new note's width, of the page's
 const MIN_W = 0.05;
 const DRAG_PX = 6; // a touch on a note that moves this far drags it
 const SAVE_MS = 400; // typing is saved this long after it stops
-const COLOR_NAMES = ['Black', 'Red', 'Blue', 'Green', 'Orange'];
 const SIZE_NAMES = ['Small', 'Medium', 'Large'];
 
 const NOTE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5"/><path d="M8.5 8.5h7M8.5 12h4"/></svg>';
@@ -139,7 +139,7 @@ export class TextNotes {
     const w = NEW_W;
     // Upright on an unturned page, it starts where tapped but stays on the page.
     const fx = r === 0 ? Math.max(0, Math.min(1 - w, at.fx)) : at.fx;
-    const mark = { id: newMarkId(), kind: 'note', x: fx, y: at.fy, w, r, text: '', color: PENS.colors[s.textColor] || PENS.colors[0], size: s.textSize ?? 1, open: true };
+    const mark = { id: newMarkId(), kind: 'note', x: fx, y: at.fy, w, r, text: '', color: chosen(s, 'textColor'), size: s.textSize ?? 1, open: true };
     this.commit();
     this.marks.put(p.fileId, p.num, mark);
     this.edit(mark.id, { fresh: true });
@@ -435,8 +435,11 @@ export class TextNotes {
     if (!ed || !this.bar) return;
     const m = ed.mark;
     const nightMode = night();
+    const colors = palette(getSettings(), 'pen');
+    if (!colors.includes(m.color)) colors.push(m.color);
     this.bar.innerHTML =
-      PENS.colors.map((c, i) => `<button class="swatch" role="radio" data-color="${i}" aria-checked="${m.color === c}" aria-label="${COLOR_NAMES[i]}"><i style="background:${nightMode ? PENS.night[i] : c}"></i></button>`).join('') +
+      // The pen's colours (js/notes-ui.js changes them), and the note's own.
+      colors.map((c) => `<button class="swatch" role="radio" data-color="${c}" aria-checked="${m.color === c}" aria-label="${colorName(c)}"><i style="background:${inkColor({ tool: 'pen', color: c }, nightMode)}"></i></button>`).join('') +
       '<span class="sep"></span>' +
       SIZE_NAMES.map((name, i) => `<button class="size-btn text-size" role="radio" data-size="${i}" aria-checked="${m.size === i}" aria-label="${name} text"><b style="font-size:${13 + i * 5}px">A</b></button>`).join('') +
       '<span class="sep"></span>' +
@@ -456,8 +459,8 @@ export class TextNotes {
       if (!b || !ed) return;
       const d = b.dataset;
       if (d.color != null) {
-        ed.mark = { ...ed.mark, color: PENS.colors[+d.color] };
-        updateSettings({ textColor: +d.color });
+        ed.mark = { ...ed.mark, color: d.color };
+        updateSettings({ textColor: d.color });
       } else if (d.size != null) {
         ed.mark = { ...ed.mark, size: +d.size };
         updateSettings({ textSize: +d.size });

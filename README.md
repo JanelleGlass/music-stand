@@ -231,7 +231,15 @@ deleted (they show again with Whole page).
   of the page and zoom controls: pen (5 colours, 3 widths), highlighter
   (4 colours, blended into the paper), eraser (takes pen marks before the
   highlight under them), undo and redo, and Done. Tap the chosen pen or
-  highlighter again for its colours. The **⋯** menu has *Write with a finger*
+  highlighter again for its colours.
+- **Your own colours**: in the colours, the rainbow **+** opens a colour
+  picker and a **hex code** field (like `1F5FD1`); the colour is used as
+  soon as you pick or type it. **Save colour** adds it to the list for next
+  time. **Remove…** lets you tap colours (built-in ones too) to take them off
+  the list, and **Reset** brings back the built-in colours. The pen and the
+  Text tool share one list; the highlighter has its own. Markings keep the
+  colour they were drawn in. Saved colours are part of the settings, so
+  backups carry them (Google Drive sync doesn't). The **⋯** menu has *Write with a finger*
   (one finger writes, two scroll; also for a mouse on a computer),
   *Hide markings* for a clean copy, and *Clear markings on page N*. The
   **Text** tool types notes (below).
@@ -427,6 +435,7 @@ js/flip.js                   a page turning like a book's, drawn over the music
 js/library.js                library screen, favorites and folders bar
 js/lists.js                  favorites and folders (data)
 js/ink.js, js/ink-draw.js    writing on the music: Pencil input, SVG layers, eraser
+js/colors.js                 pen and highlighter colours: built-in, saved, the one in use (unit tested)
 js/text-notes.js             typed notes: their layer on each page, the Text tool, shown or collapsed
 js/notes-store.js            the open score's markings: undo, redo, saving
 js/notes-ui.js               the markings tools in the top bar

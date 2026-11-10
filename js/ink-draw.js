@@ -7,18 +7,21 @@
 // stroke being drawn has a third, small layer of its own, so the finished
 // strokes aren't redrawn while it grows.
 
+import { PEN_COLORS, HL_COLORS } from './colors.js';
+
 export const PAGE_W = 1000;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // Stored colours are the day colours; night mode draws the pen in lighter
-// ones so it shows on the dark page.
+// ones so it shows on the dark page (the person's own colours, js/colors.js,
+// mixed towards white).
 export const PENS = {
-  colors: ['#1d1d1f', '#d0312d', '#1f5fd1', '#2a8a3e', '#e07a10'],
+  colors: PEN_COLORS,
   night: ['#f2f2f2', '#ff7a70', '#86b4ff', '#6fdc84', '#ffb35c'],
   widths: [1.4, 2.6, 4.4],
 };
 export const HIGHLIGHTERS = {
-  colors: ['#ffd60a', '#5be36b', '#ff7eb6', '#5ac8fa'],
+  colors: HL_COLORS,
   width: 16,
 };
 
