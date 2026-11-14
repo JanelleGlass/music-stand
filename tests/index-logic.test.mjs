@@ -1,7 +1,7 @@
 // Run with: node --test tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fold, sortEntries, findHymn, searchEntries, entryAt, nextNumber, placeLabel, pickLabels, parseTitleList, hymnRun, linkAt, boxBetween } from '../js/index-logic.js';
+import { fold, sortEntries, findHymn, searchEntries, entryAt, nextNumber, placeLabel, placeIndex, pickLabels, pickLandmarks, parseTitleList, hymnRun, linkAt, boxBetween } from '../js/index-logic.js';
 import { mergeMarks, normMark, mergePage, pageIsEmpty, restampMarks } from '../js/notes-merge.js';
 
 const hymn = (id, n, title, index, y = 0) => ({ id, kind: 'hymn', n, title, index, num: index + 1, y });
@@ -87,6 +87,52 @@ test('labels down the bar keep their distance, sections first', () => {
   ];
   assert.deepEqual(pickLabels(items, 30).map((i) => i.id), ['s1', 'h3', 'h4']);
   assert.deepEqual(pickLabels([], 30), []);
+});
+
+test('a place is found among the entries in order', () => {
+  assert.equal(placeIndex(book, 0, 0), -1); // before the first
+  assert.equal(placeIndex(book, 4, 0), 1); // Advent and hymn 1 start together: the hymn
+  assert.equal(placeIndex(book, 6, 0.2), 2); // hymn 2 still, Christmas starts lower
+  assert.equal(placeIndex(book, 6, 0.5), 4); // Christmas and Silent Night
+  assert.equal(placeIndex(book, 99, 0), 7);
+  assert.equal(placeIndex([], 3, 0), -1);
+});
+
+// n hymns numbered from first, one every px down a bar.
+const run = (n, every, first = 1) => Array.from({ length: n }, (_, i) => ({ id: `h${first + i}`, kind: 'hymn', n: String(first + i), pos: 10 + i * every }));
+const ids = (items) => items.map((i) => i.id);
+
+test('every hymn number goes down the bar when they all fit', () => {
+  assert.deepEqual(ids(pickLandmarks(run(5, 40), 30)), ['h1', 'h2', 'h3', 'h4', 'h5']);
+  assert.deepEqual(pickLandmarks([], 30), []);
+});
+
+test('crowded, the bar shows round numbers a step apart', () => {
+  // 600 hymns 1.5px apart: every 20th fits (30px apart), every 10th doesn't.
+  const kept = ids(pickLandmarks(run(600, 1.5), 30));
+  assert.deepEqual(kept.slice(0, 6), ['h20', 'h40', 'h60', 'h80', 'h100', 'h120']);
+  assert.equal(kept.length, 30);
+  // 60 hymns 4px apart: every 10th.
+  assert.deepEqual(ids(pickLandmarks(run(60, 4), 30)), ['h10', 'h20', 'h30', 'h40', 'h50', 'h60']);
+  // Numbered from 701: still round numbers.
+  assert.deepEqual(ids(pickLandmarks(run(30, 4, 701), 30)).slice(0, 3), ['h710', 'h720', 'h730']);
+});
+
+test('sections stay on the bar, and the rounder number where labels crowd', () => {
+  const items = [...run(60, 4), { id: 's', kind: 'section', title: 'Lent', pos: 48 }];
+  const kept = ids(pickLandmarks(items, 30));
+  assert.ok(kept.includes('s'));
+  assert.ok(!kept.includes('h10')); // 4px from Lent
+  // 80 and 100 too close: 100 stays.
+  const two = [{ id: 'h80', kind: 'hymn', n: '80', pos: 0 }, { id: 'h100', kind: 'hymn', n: '100', pos: 20 }];
+  assert.deepEqual(ids(pickLandmarks(two, 30)), ['h100']);
+});
+
+test('numbers with letters go down the bar only when all fit', () => {
+  const items = [{ id: 'a', kind: 'hymn', n: '10a', pos: 0 }, { id: 'b', kind: 'hymn', n: '11', pos: 40 }];
+  assert.deepEqual(ids(pickLandmarks(items, 30)), ['a', 'b']);
+  const crowded = [...run(20, 2), { id: 'x', kind: 'hymn', n: '5a', pos: 12 }];
+  assert.ok(!ids(pickLandmarks(crowded, 30)).includes('x'));
 });
 
 test('a pasted index gives numbers and titles, number first or last', () => {

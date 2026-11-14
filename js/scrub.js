@@ -24,6 +24,20 @@ export function fractionAt(y, trackH, handleH, grab) {
   return room > 0 ? clamp01((y - grab) / room) : 0;
 }
 
+// The magnifier beside the bar: a column of the index's entries, rows rowH
+// px apart, entry k0's row centred y0 px down. The entry (0 to count - 1)
+// whose row is at y; -1 with no entries.
+export function rowAt(k0, y0, y, rowH, count) {
+  if (count < 1) return -1;
+  return Math.max(0, Math.min(count - 1, k0 + Math.round((y - y0) / rowH)));
+}
+
+// Where a box boxH px tall goes (its top) to be centred on y, staying
+// between lo and hi (at lo when it can't fit).
+export function boxTop(y, boxH, lo, hi) {
+  return Math.round(Math.max(lo, Math.min(hi - boxH, y - boxH / 2)));
+}
+
 // Where to scroll for fraction f. With slot > 0 (one page at a time) it
 // lands on the start of a page.
 export function scrollFor(f, maxScroll, slot = 0) {

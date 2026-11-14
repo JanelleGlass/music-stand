@@ -80,6 +80,12 @@ while you scroll by hand, and stays out of the way otherwise.
 
 - Drag its handle: a label beside it shows the page you'll land on, and the
   music follows your finger. Tap anywhere on the track to jump there.
+- With an index (below), a magnifier pops out beside your finger instead of
+  the label: the hymns around where you'd land, in big type, the one you'd
+  land on lit. To pick one exactly, slide your finger left onto the
+  magnifier: it then goes one hymn per row, and the music follows. Hold the
+  top or bottom row at the edge of the screen to bring in more. Slide back
+  onto the bar for big moves again; let go to stay on the hymn.
 - One page at a time, it moves whole pages, without the page-turn animation.
 - It hides while the markings tools are open (so you can write near the
   right edge), and when the whole score fits on the screen.
@@ -103,9 +109,11 @@ including scanned ones.
 - **Search** by hymn number (`245`, then Return goes straight there) or by
   any words of a title (`grace amazing`), ignoring case, accents and
   punctuation. Tap a row to go to it.
-- The **scroll bar** shows the sections and hymn numbers, as many as fit
-  down the screen; tap one to go there. While you drag the handle, its label
-  names the hymn you'll land on.
+- The **scroll bar** shows the sections and hymn numbers; tap one to go
+  there. When they don't all fit, it shows round numbers a step apart
+  (every 10th, 20th, 50th...) so they're easy to steer by. Holding the bar
+  pops out a magnifier of the hymns around your finger; slide onto it to
+  pick any hymn exactly (see *Scroll bar* above).
 - **Tap areas** make a scanned index page clickable. Go to the index page,
   tap *Tap areas*, and drag across a line (say *245 Amazing Grace*). Then
   type the hymn number it goes to (or a page). Tapping that line while
