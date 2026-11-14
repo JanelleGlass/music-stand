@@ -1,7 +1,7 @@
 // Run with: node --test tests/scrub.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fractionOf, handleTop, fractionAt, scrollFor } from '../js/scrub.js';
+import { fractionOf, handleTop, fractionAt, scrollFor, rowAt, boxTop } from '../js/scrub.js';
 
 test('fractionOf goes from 0 at the top to 1 at the end', () => {
   assert.equal(fractionOf(0, 1000), 0);
@@ -51,4 +51,21 @@ test('scrollFor lands on a page one page at a time', () => {
   assert.equal(scrollFor(0.06, 9000, 1000), 1000);
   assert.equal(scrollFor(0.5, 9000, 1000), 5000);
   assert.equal(scrollFor(1, 9000, 1000), 9000);
+});
+
+test('the magnifier picks the row beside the finger, a row each 44px', () => {
+  assert.equal(rowAt(10, 300, 300, 44, 600), 10);
+  assert.equal(rowAt(10, 300, 321, 44, 600), 10);
+  assert.equal(rowAt(10, 300, 323, 44, 600), 11);
+  assert.equal(rowAt(10, 300, 300 - 88, 44, 600), 8);
+  assert.equal(rowAt(1, 300, 0, 44, 600), 0); // not before the first
+  assert.equal(rowAt(598, 300, 900, 44, 600), 599); // nor after the last
+  assert.equal(rowAt(0, 300, 300, 44, 0), -1);
+});
+
+test('the magnifier is centred on the finger, within the screen', () => {
+  assert.equal(boxTop(500, 396, 0, 1000), 302);
+  assert.equal(boxTop(50, 396, -58, 1000), -58);
+  assert.equal(boxTop(990, 396, 0, 1000), 604);
+  assert.equal(boxTop(300, 396, 0, 200), 0); // too short: from the top
 });

@@ -702,6 +702,33 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; ma
 }
 .scrub-mark.section { background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 14px; }
 
+/* The magnifier beside the held scroll bar (js/scrubber.js); with it, the
+   label and the bar's own labels step aside. Its rows are 44px (ROW). */
+.scrub-loupe {
+  position: absolute; right: 52px; top: 0; width: min(300px, calc(100vw - 72px));
+  display: none; pointer-events: none; overflow: hidden; border-radius: 14px;
+  background: rgba(20, 22, 26, 0.95); color: #f1efea;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.scrub.looking .scrub-loupe { display: block; }
+.scrub.looking .scrub-label, .scrub.looking .scrub-marks { opacity: 0; }
+.loupe-rows { position: relative; overflow: hidden; }
+.loupe-row {
+  position: absolute; left: 0; right: 0; height: 44px;
+  display: flex; align-items: center; gap: 12px; padding: 0 14px; white-space: nowrap;
+}
+.loupe-row b { flex: none; min-width: 2.6em; font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.loupe-row .t { overflow: hidden; text-overflow: ellipsis; font-size: 15px; color: rgba(241, 239, 234, 0.72); }
+.loupe-row.section .t { color: #f0a85c; font-weight: 700; font-size: 16px; }
+.loupe-row.on { background: var(--accent); color: var(--accent-ink); }
+.loupe-row.on .t { color: inherit; }
+.loupe-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 30px; padding: 0 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px; color: rgba(241, 239, 234, 0.6); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.scrub-loupe.fine .loupe-hint { visibility: hidden; }
+
 /* The Index panel. */
 .sheet-head h2 small { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 6px; }
 .ix-top { padding: 12px max(16px, env(safe-area-inset-right)) 10px 16px; border-bottom: 1px solid var(--line); }

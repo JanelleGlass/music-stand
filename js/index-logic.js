@@ -92,6 +92,19 @@ export function placeLabel(entries, index, y) {
   return '';
 }
 
+// Where a place in the music is among entries in the order of the music
+// (sortEntries): the position of the last one at or before it, or -1 before
+// the first.
+export function placeIndex(sorted, index, y) {
+  let at = -1;
+  for (let i = 0; i < sorted.length; i++) {
+    const e = sorted[i];
+    if (e.index < index || (e.index === index && e.y <= y + 1e-6)) at = i;
+    else break;
+  }
+  return at;
+}
+
 // Which labels fit down a track: items { pos, priority } (pos in px, lower
 // priority goes first) at least gap px apart. Sections go before hymns, and
 // among equals, the ones that come first. Returns the items kept, by pos.
@@ -102,6 +115,47 @@ export function pickLabels(items, gap) {
     if (kept.every((k) => Math.abs(k.pos - it.pos) >= gap)) kept.push(it);
   }
   return kept.sort((a, b) => a.pos - b.pos);
+}
+
+// The steps hymn numbers go down the scroll bar by: every one, every 2nd,
+// every 5th, 10th, 20th...
+const STEPS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000];
+const FIT = 0.75; // a step fits when at least this share of its numbers do
+
+// A hymn number as a whole number: "245" is 245; "245a" isn't one (0).
+function wholeNumber(n) {
+  const s = String(n ?? '').trim();
+  return /^\d+$/.test(s) ? Number(s) : 0;
+}
+
+// The biggest step a hymn number is a multiple of (0 for none).
+function roundness(n) {
+  const v = wholeNumber(n);
+  let best = 0;
+  if (v) for (const s of STEPS) if (v % s === 0) best = s;
+  return best;
+}
+
+// Which index labels go down the scroll bar, at least gap px apart: items
+// { pos, kind, n } (pos in px). Sections first. Then hymn numbers at a round
+// step, the smallest that fits: every one when there's room, or else every
+// 2nd, 5th, 10th, 20th..., so the numbers on the bar are landmarks to steer
+// by (20, 40, 60...) rather than whichever happened to fit. Where labels
+// crowd, the rounder number stays (100 before 80). Returns the items kept,
+// by pos.
+export function pickLandmarks(items, gap) {
+  const rank = (it) => (it.kind === 'section' ? 0 : 1 + STEPS.length - STEPS.indexOf(roundness(it.n)));
+  const all = items.map((it) => ({ ...it, priority: rank(it) }));
+  const sections = all.filter((it) => it.kind === 'section');
+  const hymns = all.filter((it) => it.kind !== 'section');
+  for (const step of STEPS) {
+    const want = step === 1 ? hymns : hymns.filter((it) => wholeNumber(it.n) % step === 0 && wholeNumber(it.n) > 0);
+    if (!want.length) continue;
+    const kept = pickLabels([...sections, ...want], gap);
+    if (kept.filter((it) => it.kind !== 'section').length >= want.length * FIT) return kept;
+  }
+  // Too crowded for any step: as many as fit, the roundest first.
+  return pickLabels(all, gap);
 }
 
 // A list of hymns typed or pasted, one per line, as a printed index has
