@@ -418,6 +418,8 @@ If you replace anything in `vendor/`, also bump `LIB_CACHE` in `sw.js`.
   iPad over plain `http://` on your home network. Use the GitHub Pages address.
 - When installed to the Home Screen, iPadOS may ask for camera permission
   again after the app has been closed. That's an iPadOS rule.
+- The app itself doesn't pinch-zoom, so swiping to another app and back can't
+  leave it zoomed in. Use the − / + in a score's top bar to zoom the music.
 - Password-protected PDFs can't be opened; remove the password first.
 - If quick Pencil strokes go missing, turn off Settings › Apple Pencil ›
   Scribble on the iPad (it can take strokes meant for web pages). Typed notes
