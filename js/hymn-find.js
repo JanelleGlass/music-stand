@@ -196,9 +196,14 @@ export function findHymnStarts(pages, wanted) {
     const k = hi - lo + 1;
     if (k <= 0) continue;
     const span = a && b ? b.index - a.index : 0;
+    // Pages that share out evenly (one a page, two...): there. Otherwise, at
+    // least between them, spread out as the pages allow.
     const step = a && b && a.y === 0 && b.y === 0 && span % (k + 1) === 0 ? span / (k + 1) : 0;
     for (let r = lo; r <= hi; r++) {
-      const guess = step >= 1 && step <= 4 ? { how: 'guessed', index: a.index + (r - lo + 1) * step, y: 0 } : { how: 'none', index: null, y: null };
+      const j = r - lo + 1;
+      let guess = { how: 'none', index: null, y: null };
+      if (step >= 1 && step <= 4) guess = { how: 'guessed', index: a.index + j * step, y: 0 };
+      else if (span >= 2) guess = { how: 'guessed', index: Math.max(a.index + 1, Math.min(b.index - 1, a.index + Math.round((span * j) / (k + 1)))), y: 0 };
       out.set(wanted[r], { ...guess, after: at(a), before: at(b) });
     }
   }

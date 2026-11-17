@@ -605,7 +605,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
     const items = [
       moves.length && `${s(moves.length, 'hymn moves', 'hymns move')} to where ${moves.length === 1 ? 'it starts' : 'they start'}.`,
       adds.length && `${s(adds.length, 'hymn is', 'hymns are')} added to the index.`,
-      guessed.length && `${s(guessed.length, 'hymn’s number wasn’t', 'hymns’ numbers weren’t')} read, but ${guessed.length === 1 ? 'it fits' : 'they fit'} between the hymns either side, one every few pages: <span class="nums">${esc(shortList(guessed))}</span>.`,
+      guessed.length && `${s(guessed.length, 'hymn’s number wasn’t', 'hymns’ numbers weren’t')} read, so ${guessed.length === 1 ? 'it goes' : 'they go'} between the hymns either side. Check ${guessed.length === 1 ? 'it' : 'these'}: <span class="nums">${esc(shortList(guessed))}</span>.`,
       kept.length && `Not found, so staying where ${kept.length === 1 ? 'it is' : 'they are'}: <span class="nums">${esc(shortList(kept))}</span>.`,
       missing.length && `Not found, and not in the index: <span class="nums">${esc(shortList(missing))}</span>.`,
     ].filter(Boolean);

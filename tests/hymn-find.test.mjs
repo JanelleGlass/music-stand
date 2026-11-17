@@ -115,12 +115,17 @@ test('a hymn whose number wasn’t read goes between the hymns either side when 
   assert.deepEqual(m.get('4').after, { index: 2, y: 0 });
   assert.deepEqual(m.get('4').before, { index: 5, y: 0 });
   // 3 takes two pages and 4 starts partway down the next: three pages for
-  // two hymns don't share out evenly, so no guess, but 4 must be between.
+  // two hymns don't share out evenly, but 4 goes between them as near the
+  // middle as the pages allow.
   const two = book([[[1, 0.02]], [[2, 0.02]], [[3, 0.02]], [], [[4, 0.5]], [[5, 0.02]]]);
   two[4].nums = two[4].nums.filter(([n, , y0, , y1]) => y1 - y0 < 60);
   const t = findHymnStarts(two, wanted(5));
-  assert.equal(placeOf(t, 4), 'none');
+  assert.equal(placeOf(t, 4), 'guessed 4 0.00');
   assert.deepEqual([t.get('4').after.index, t.get('4').before.index], [2, 5]);
+  // With no page between the hymns either side, nowhere to put it.
+  const none = book([[[1, 0.02]], [[2, 0.02]], [[3, 0.02], [4, 0.5]], [[5, 0.02]]]);
+  none[2].nums = none[2].nums.filter(([n, , y0, , y1]) => !(n === '4' && y1 - y0 > 60));
+  assert.equal(placeOf(findHymnStarts(none, wanted(5)), 4), 'none');
 });
 
 test('a number misread out of order is left out', () => {
