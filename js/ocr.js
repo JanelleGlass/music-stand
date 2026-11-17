@@ -14,6 +14,11 @@ import { parseTsv, pageNumbers } from './hymn-find.js';
 
 const BASE = new URL('../vendor/tesseract/', import.meta.url).href;
 const READ_WIDTH = 1800; // px a page is drawn at for reading
+// For finding hymn numbers: drawn smaller, a big number reads like ordinary
+// text; read for scattered text, it isn't taken for a picture (a number
+// alone above a title often is, read as a page of lines). A second look,
+// where hymns are still missing, reads the page whole again the other way.
+const NUMBERS_WIDTH = 1000;
 const IDLE_MS = 60_000; // the engine is let go after this long unused
 export const TEXT_VERSION = 1;
 export const NUMS_VERSION = 1;
@@ -54,13 +59,14 @@ export function release(now = false) {
   else idleTimer = setTimeout(go, IDLE_MS);
 }
 
-// Reads one canvas at a time: data as Tesseract gives it. layout: find the
-// blocks of text on the page (so a hymn number standing apart is a word of
-// its own) rather than taking the page as one block of lines.
-function recognize(canvas, { onLoading, layout = false, words = false } = {}) {
+// Reads one canvas at a time: data as Tesseract gives it. mode: 'lines'
+// takes the page as one block of lines, 'layout' finds its blocks of text,
+// 'sparse' finds as much scattered text as it can.
+const MODES = { lines: '6', layout: '3', sparse: '11' };
+function recognize(canvas, { onLoading, mode = 'lines', words = false } = {}) {
   const job = queue.then(async () => {
     const w = await engine(onLoading);
-    await w.setParameters({ tessedit_pageseg_mode: layout ? '3' : '6' });
+    await w.setParameters({ tessedit_pageseg_mode: MODES[mode] });
     const { data } = await w.recognize(canvas, {}, { text: true, tsv: words });
     return data || {};
   });
@@ -80,14 +86,14 @@ export function readingView(viewer, index) {
   return { rot: p.view ? p.view.rot || 0 : 0, tilt: p.view ? p.view.tilt || 0 : 0 };
 }
 
-// Page index of the open score drawn for reading: whole, turned and
-// straightened as it shows.
-async function pageCanvas(viewer, index) {
+// Page index of the open score drawn for reading, width px wide: whole,
+// turned and straightened as it shows.
+async function pageCanvas(viewer, index, width = READ_WIDTH) {
   const p = viewer.pages[index];
   const { rot, tilt } = readingView(viewer, index);
   const turned = rot % 180 ? [p.ph, p.pw] : [p.pw, p.ph];
-  const h = Math.round((READ_WIDTH * turned[1]) / turned[0]);
-  return viewer.paperImage(index, rot, READ_WIDTH, h, 1, tilt);
+  const h = Math.round((width * turned[1]) / turned[0]);
+  return viewer.paperImage(index, rot, width, h, 1, tilt);
 }
 
 // The text on page index of the open score.
@@ -100,13 +106,13 @@ export async function readPage(viewer, index, options) {
   }
 }
 
-// Page index of the open score read for finding hymns: { text, nums } (nums
-// as js/hymn-find.js keeps a page's numbers).
-export async function readPageNumbers(viewer, index, options = {}) {
-  const canvas = await pageCanvas(viewer, index);
+// The numbers on page index of the open score, for finding hymns, as
+// js/hymn-find.js keeps a page's numbers. second: the second look.
+export async function readPageNumbers(viewer, index, { second = false, ...options } = {}) {
+  const canvas = await pageCanvas(viewer, index, second ? READ_WIDTH : NUMBERS_WIDTH);
   try {
-    const data = await recognize(canvas, { ...options, layout: true, words: true });
-    return { text: data.text || '', nums: pageNumbers(parseTsv(data.tsv), canvas.width, canvas.height) };
+    const data = await recognize(canvas, { ...options, mode: second ? 'layout' : 'sparse', words: true });
+    return pageNumbers(parseTsv(data.tsv), canvas.width, canvas.height);
   } finally {
     canvas.width = canvas.height = 0;
   }

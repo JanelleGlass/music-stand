@@ -253,3 +253,24 @@ export function shortList(ns, max = 12) {
   }
   return parts.length > max ? `${parts.slice(0, max).join(', ')}…` : parts.join(', ');
 }
+
+// The pages to look at again, where a hymn still missing could start (from
+// the found hymn before it to the one after): their indexes, in order. last:
+// the index of the last page.
+export function pagesToLookAgain(places, last) {
+  const out = new Set();
+  for (const p of places.values()) {
+    if (p.how === 'found') continue;
+    const from = p.after ? p.after.index : 0;
+    const to = p.before ? p.before.index : last;
+    for (let i = from; i <= to; i++) out.add(i);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+// A page's numbers with a second look's added (made to the first's scale).
+export function withSecondLook(rec, more) {
+  const k = more && more.w ? rec.w / more.w : 1;
+  const extra = more ? more.nums.map(([n, ...xy]) => [n, ...xy.map((v) => Math.round(v * k))]) : [];
+  return { ...rec, second: true, nums: [...rec.nums, ...extra] };
+}

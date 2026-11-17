@@ -1,7 +1,7 @@
 // Run with: node --test tests/hymn-find.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTsv, numberOf, pageNumbers, wantedNumbers, findHymnStarts, hymnChanges, shortList } from '../js/hymn-find.js';
+import { parseTsv, numberOf, pageNumbers, wantedNumbers, findHymnStarts, hymnChanges, shortList, pagesToLookAgain, withSecondLook } from '../js/hymn-find.js';
 
 test('words come from Tesseract’s TSV, with their boxes', () => {
   const tsv = [
@@ -178,4 +178,20 @@ test('numbers for a message: runs shortened, and not too many', () => {
   assert.equal(shortList(['9', '10a', '11']), '9, 10a, 11');
   assert.equal(shortList(['1', '3', '5', '7'], 2), '1, 3…');
   assert.equal(shortList([]), '');
+});
+
+test('a second look goes to the pages where missing hymns could be, and adds what it reads', () => {
+  const places = new Map([
+    ['1', { how: 'found', index: 1, y: 0 }],
+    ['2', { how: 'none', after: { index: 1, y: 0 }, before: { index: 4, y: 0 } }],
+    ['3', { how: 'guessed', index: 3, y: 0, after: { index: 1, y: 0 }, before: { index: 4, y: 0 } }],
+    ['4', { how: 'found', index: 4, y: 0 }],
+    ['5', { how: 'none', after: { index: 4, y: 0 }, before: null }],
+  ]);
+  assert.deepEqual(pagesToLookAgain(places, 6), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(pagesToLookAgain(new Map([['1', { how: 'found', index: 0, y: 0 }]]), 9), []);
+  const rec = { w: 1000, h: 1500, mh: 17, nums: [['3', 60, 280, 70, 296]] };
+  assert.deepEqual(withSecondLook(rec, { w: 1800, h: 2700, mh: 30, nums: [['12', 1530, 120, 1650, 186]] }), {
+    w: 1000, h: 1500, mh: 17, second: true, nums: [['3', 60, 280, 70, 296], ['12', 850, 67, 917, 103]],
+  });
 });

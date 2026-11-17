@@ -157,8 +157,9 @@ text recognition (OCR), on the iPad itself:
   the pages share out evenly (one a page, say); otherwise it stays where it
   was, to move with the pencil button. Verse numbers, time signatures,
   "(continued)" headings and the book's own index at the back are left out.
-  Pages it reads can be searched by their words too. If the music finishes
-  reading while the Index is closed, opening it shows what was found.
+  Where hymns are still missing after the first read, it takes a second
+  look at those pages, read another way. If it finishes while the Index is
+  closed, opening it shows what was found.
 - The first use downloads text recognition (about 11 MB), so do it once
   while online; after that it works offline.
 - With Google Drive sync on, what the pages say syncs too (in the notes and

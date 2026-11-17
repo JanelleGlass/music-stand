@@ -7,7 +7,7 @@
 import { $, esc, icon, toast, openModal, confirmDialog, actionSheet } from './ui.js';
 import { sortEntries, searchEntries, findHymn, hymnFor, nextNumber, entryAt, parseTitleList, hymnRun, boxBetween, compareNumbers, searchPages } from './index-logic.js';
 import { readPage, savedTexts, saveText, readPageNumbers, readingView, savedNumbers, saveNumbers, release as releaseOcr } from './ocr.js';
-import { wantedNumbers, findHymnStarts, hymnChanges, shortList } from './hymn-find.js';
+import { wantedNumbers, findHymnStarts, hymnChanges, shortList, pagesToLookAgain, withSecondLook } from './hymn-find.js';
 import { shownBox } from './page-view.js';
 import { newMarkId } from './marks.js';
 import { libraryEdited } from './data.js';
@@ -484,10 +484,16 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
       el.textContent = job.status;
       return;
     }
-    const n = viewer.pages.length;
-    const done = viewer.pages.reduce((sum, _, i) => sum + (numbersOf(i) ? 1 : 0), 0);
-    const left = job.k ? Math.ceil(((n - done) * (Date.now() - job.t0)) / job.k / 60000) : 0;
-    el.textContent = `Finding hymns: ${done} of ${n} pages read${left ? ` (about ${left} minute${left === 1 ? '' : 's'} left)` : ''}. You can keep reading the music meanwhile.`;
+    const pages = job.again || viewer.pages.map((_, i) => i);
+    const done = pages.reduce((sum, i) => {
+      const rec = numbersOf(i);
+      return sum + (rec && (!job.again || rec.second) ? 1 : 0);
+    }, 0);
+    const left = job.k ? Math.ceil(((pages.length - done) * (Date.now() - job.t0)) / job.k / 60000) : 0;
+    const what = job.again
+      ? `Taking a second look where hymns are still missing: ${done} of ${pages.length} pages`
+      : `Finding hymns: ${done} of ${pages.length} pages read`;
+    el.textContent = `${what}${left ? ` (about ${left} minute${left === 1 ? '' : 's'} left)` : ''}. You can keep reading the music meanwhile.`;
   }
 
   $('#ix-find').addEventListener('click', async () => {
@@ -518,44 +524,52 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
   });
 
   async function findPages(from, to) {
-    const job = { key: viewer.key, from, to, stop: false, status: '', t0: 0, k: 0 };
+    // again: the pages of the second look, once it starts.
+    const job = { key: viewer.key, from, to, stop: false, status: '', t0: 0, k: 0, again: null };
     finding = job;
     foundFor = null;
     renderFinding();
-    await Promise.all([loadTexts(), loadNumbers()]);
+    await loadNumbers();
     const live = () => !job.stop && viewer.key === job.key && viewer.isOpen;
+    const onLoading = (m) => {
+      if (/load|initializ/i.test(m.status) && m.progress < 1) {
+        job.status = `Getting text recognition ready (${Math.round((m.progress || 0) * 100)}%)… The first time, this downloads about 11 MB.`;
+        if (sheet.open) renderFinding();
+      }
+    };
+    // Reads page i for its numbers (second: the second look), keeping them.
+    const read = async (i, second) => {
+      // Not while a page turns or the Pencil writes: they come first.
+      while (live() && (viewer.animating || viewer.ink.busy)) await new Promise((r) => setTimeout(r, 300));
+      const first = numbersOf(i);
+      if (!live() || (second && !first)) return;
+      const p = viewer.pages[i];
+      const view = readingView(viewer, i);
+      const nums = await readPageNumbers(viewer, i, { second, onLoading });
+      if (viewer.key !== job.key || !numbers) return;
+      const rec = second ? withSecondLook(first, nums) : { ...view, ...nums };
+      await saveNumbers(p.fileId, p.num, rec);
+      numbers.byNum.set(`${p.fileId}:${p.num}`, rec);
+      if (job.t0) job.k++;
+      else job.t0 = Date.now(); // timed from the second page: the first gets text recognition ready
+      job.status = '';
+      if (sheet.open) renderFinding();
+    };
     let failed = null;
-    let newTexts = 0;
     try {
       for (let i = 0; i < viewer.pages.length && live(); i++) {
-        if (numbersOf(i)) continue;
-        // Not while a page turns or the Pencil writes: they come first.
-        while (live() && (viewer.animating || viewer.ink.busy)) await new Promise((r) => setTimeout(r, 300));
-        if (!live()) break;
-        const p = viewer.pages[i];
-        const view = readingView(viewer, i);
-        const read = await readPageNumbers(viewer, i, {
-          onLoading: (m) => {
-            if (/load|initializ/i.test(m.status) && m.progress < 1) {
-              job.status = `Getting text recognition ready (${Math.round((m.progress || 0) * 100)}%)… The first time, this downloads about 11 MB.`;
-              if (sheet.open) renderFinding();
-            }
-          },
-        });
-        if (viewer.key !== job.key || !numbers) break;
-        const rec = { ...view, ...read.nums };
-        await saveNumbers(p.fileId, p.num, rec);
-        numbers.byNum.set(`${p.fileId}:${p.num}`, rec);
-        // Its words can be searched too, if they weren't yet.
-        if (texts && texts.key === job.key && textOf(p) === undefined) {
-          await saveText(p.fileId, p.num, read.text);
-          texts.byNum.set(`${p.fileId}:${p.num}`, read.text);
-          if (++newTexts % 25 === 0) libraryEdited(); // Google Drive sync sends it on
+        if (!numbersOf(i)) await read(i, false);
+      }
+      // A second look, read the other way, where hymns are still missing.
+      if (live()) {
+        job.again = pagesToLookAgain(placesFor(from, to).places, viewer.pages.length - 1);
+        job.t0 = 0;
+        job.k = 0;
+        for (const i of job.again) {
+          if (!live()) break;
+          const rec = numbersOf(i);
+          if (rec && !rec.second) await read(i, true);
         }
-        if (job.t0) job.k++;
-        else job.t0 = Date.now(); // timed from the second page: the first gets text recognition ready
-        job.status = '';
-        if (sheet.open) renderFinding();
       }
     } catch (e) {
       console.warn(e);
@@ -563,7 +577,6 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
     }
     if (finding === job) finding = null;
     releaseOcr();
-    if (newTexts) libraryEdited();
     if (viewer.key !== job.key) return;
     if (sheet.open) renderFinding();
     if (failed) {
@@ -578,6 +591,16 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
     }
   }
 
+  // Where the pages read say hymns from to to start (js/hymn-find.js).
+  function placesFor(from, to) {
+    const pages = viewer.pages.map((p, index) => {
+      const rec = numbersOf(index);
+      return rec && { index, ...rec, crop: cropOf(p) };
+    }).filter(Boolean);
+    const wanted = wantedNumbers(entries(), from, to);
+    return { wanted, places: findHymnStarts(pages, wanted) };
+  }
+
   // The part of a page shown, top and height, as fractions of it as read.
   const cropOf = (p) => {
     const b = shownBox(p.view, 1, 1);
@@ -588,12 +611,8 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
   // if wanted.
   async function review(from, to) {
     await loadNumbers();
-    const pages = viewer.pages.map((p, index) => {
-      const rec = numbersOf(index);
-      return rec && { index, ...rec, crop: cropOf(p) };
-    }).filter(Boolean);
-    const wanted = wantedNumbers(entries(), from, to);
-    const changes = hymnChanges(entries(), wanted, findHymnStarts(pages, wanted));
+    const { wanted, places } = placesFor(from, to);
+    const changes = hymnChanges(entries(), wanted, places);
     const of = (f) => changes.filter(f).map((c) => c.n);
     const found = of((c) => c.how === 'found');
     const guessed = of((c) => c.how === 'guessed' && (c.action === 'add' || c.action === 'move'));
