@@ -36,6 +36,45 @@ export function findHymn(entries, n) {
   return entries.find((e) => e.kind === 'hymn' && fold(e.n).replace(/\s+/g, '') === want) || null;
 }
 
+// The hymn a tap area goes to. Its box asks for the number ("245"), but
+// whatever was typed there works when it names a hymn: the line as the
+// printed index has it ("1 Twinkle, Twinkle Little Star", "Amazing Grace
+// .... 245"), or just the title. A title that matches beats a number that
+// doesn't (the number on an index line can be its page).
+export function hymnFor(entries, text) {
+  const exact = findHymn(entries, text);
+  if (exact) return exact;
+  const [line] = parseTitleList(text);
+  const n = line ? squash(line.n) : '';
+  const hymns = sortEntries(entries.filter((e) => e.kind === 'hymn'));
+  for (const tier of titleMatches(hymns, line ? line.title : text)) {
+    const pick = tier.list.find((e) => squash(e.n) === n) || (tier.list.length === 1 || !tier.partial ? tier.list[0] : null);
+    if (pick) return pick;
+  }
+  return n ? findHymn(hymns, n) : null;
+}
+
+const squash = (s) => fold(s).replace(/\s+/g, '');
+const MIN_TITLE = 4; // letters, so a stray word or two doesn't count
+
+// Hymns whose titles match what was typed, best first: the same title; then
+// titles the typed words start with, longest first (the line goes on past
+// the title: "Twinkle, Twinkle, Little Star Variations, Shinichi Suzuki");
+// then titles starting with the typed words (partial: only part typed).
+function titleMatches(hymns, typed) {
+  const t = squash(typed);
+  if (t.length < MIN_TITLE) return [];
+  const titled = hymns.map((e) => ({ e, s: squash(e.title) })).filter((x) => x.s.length >= MIN_TITLE);
+  const same = titled.filter((x) => x.s === t);
+  const longer = titled.filter((x) => x.s !== t && t.startsWith(x.s)).sort((a, b) => b.s.length - a.s.length);
+  const part = titled.filter((x) => x.s !== t && x.s.startsWith(t));
+  return [
+    { list: same.map((x) => x.e) },
+    { list: longer.length ? longer.filter((x) => x.s.length === longer[0].s.length).map((x) => x.e) : [] },
+    { list: part.map((x) => x.e), partial: true },
+  ];
+}
+
 // Entries matching what was typed, best first. A number finds that hymn
 // first, then hymns whose numbers start with it; words find titles (and
 // sections) holding every word, words that start a title first.

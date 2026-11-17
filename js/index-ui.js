@@ -4,7 +4,7 @@
 // index page, each going to a hymn or a page. The marks are kept by
 // js/marks.js; js/index-logic.js has the rules.
 import { $, esc, icon, toast, openModal, confirmDialog, actionSheet } from './ui.js';
-import { sortEntries, searchEntries, findHymn, nextNumber, entryAt, parseTitleList, hymnRun, boxBetween, compareNumbers, searchPages } from './index-logic.js';
+import { sortEntries, searchEntries, findHymn, hymnFor, nextNumber, entryAt, parseTitleList, hymnRun, boxBetween, compareNumbers, searchPages } from './index-logic.js';
 import { readPage, savedTexts, saveText, release as releaseOcr } from './ocr.js';
 import { libraryEdited } from './data.js';
 import { pieceKey } from './links.js';
@@ -449,7 +449,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
   function follow(link) {
     const from = viewer.topPlace();
     if (link.hymn) {
-      const h = findHymn(entries(), link.hymn);
+      const h = hymnFor(entries(), link.hymn);
       if (!h) {
         toast(`Hymn ${link.hymn} isn’t in the index yet. Add it from Index.`, 3200);
         return;
@@ -590,7 +590,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
   async function linkTarget(title, link = null) {
     return formDialog({
       title,
-      message: 'Type the hymn number from the line you drew round. It goes to that hymn in the index. Or give a page instead.',
+      message: 'Type the hymn number from the line you drew round (its title works too). It goes to that hymn in the index. Or give a page instead.',
       fields: [
         { name: 'hymn', label: 'Hymn number', value: link && link.hymn ? link.hymn : '', inputmode: 'numeric', autofocus: true },
         { name: 'page', label: 'or page', value: link && link.page ? String(link.page) : '', type: 'number', min: 1, max: pageCount() },
@@ -617,7 +617,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
       return;
     }
     marks.add([{ fileId: page.fileId, num: page.num, mark: { kind: 'link', box, ...to } }]);
-    if (to.hymn && !findHymn(entries(), to.hymn)) toast(`Saved. Hymn ${to.hymn} isn’t in the index yet: add it so this goes somewhere.`, 3600);
+    if (to.hymn && !hymnFor(entries(), to.hymn)) toast(`Saved. Hymn ${to.hymn} isn’t in the index yet: add it so this goes somewhere.`, 3600);
   }
 
   async function changeLink(link) {
