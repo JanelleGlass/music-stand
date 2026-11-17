@@ -1,11 +1,15 @@
 // The Index panel of an open score: its hymns and sections, searched by
 // number or by words of their titles; adding them where the music is, many
-// at once, or titles from a pasted list. And drawing tap areas on a printed
+// at once, or titles from a pasted list; finding where each hymn starts from
+// the numbers printed on the pages. And drawing tap areas on a printed
 // index page, each going to a hymn or a page. The marks are kept by
-// js/marks.js; js/index-logic.js has the rules.
+// js/marks.js; js/index-logic.js and js/hymn-find.js have the rules.
 import { $, esc, icon, toast, openModal, confirmDialog, actionSheet } from './ui.js';
 import { sortEntries, searchEntries, findHymn, hymnFor, nextNumber, entryAt, parseTitleList, hymnRun, boxBetween, compareNumbers, searchPages } from './index-logic.js';
-import { readPage, savedTexts, saveText, release as releaseOcr } from './ocr.js';
+import { readPage, savedTexts, saveText, readPageNumbers, readingView, savedNumbers, saveNumbers, release as releaseOcr } from './ocr.js';
+import { wantedNumbers, findHymnStarts, hymnChanges, shortList } from './hymn-find.js';
+import { shownBox } from './page-view.js';
+import { newMarkId } from './marks.js';
 import { libraryEdited } from './data.js';
 import { pieceKey } from './links.js';
 
@@ -24,6 +28,9 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
   let returnTimer = 0;
   let texts = null; // { key, byNum: Map page → text } of the open score
   let reading = null; // reading every page: { key, done, total, stop }
+  let numbers = null; // { key, byNum: Map "fileId:page" → its numbers } of the open score
+  let finding = null; // finding hymn pages: { key, from, to, stop, status, t0, k }
+  let foundFor = null; // finding that finished with the panel closed: { key, from, to }
 
   const entries = () => marks.entries();
   const pageCount = () => viewer.pages.length;
@@ -38,6 +45,12 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
     sheet.showModal();
     onOpenChange(true);
     loadTexts().then(() => { if (sheet.open) render(); });
+    // Hymn numbers read while the panel was closed: what they say.
+    if (foundFor && foundFor.key === viewer.key) {
+      const { from, to } = foundFor;
+      foundFor = null;
+      setTimeout(() => { if (sheet.open) review(from, to); }, 300);
+    }
   }
 
   // What the pages of the open score say, as read before.
@@ -75,6 +88,7 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
     const sections = all.length - hymns;
     $('#ix-count').textContent = all.length ? [hymns && `${hymns} hymn${hymns === 1 ? '' : 's'}`, sections && `${sections} section${sections === 1 ? '' : 's'}`].filter(Boolean).join(', ') : '';
     renderReading();
+    renderFinding();
     const read = pageWords();
     const pageHits = q ? searchPages(read, q) : [];
     const words = pageHits.length
@@ -434,6 +448,237 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
     else if (!job.stop && count) toast('All pages have been read. Search the Index for any words on them.', 3200);
   }
 
+  // ---- Finding where each hymn starts, from the numbers on the pages ----
+  // (js/hymn-find.js has the rules.) Each page is read once and what's on it
+  // kept, so stopping carries on where it stopped next time. What's found is
+  // shown before the index changes, and can be undone.
+
+  async function loadNumbers() {
+    const k = viewer.key;
+    if (numbers && numbers.key === k) return numbers;
+    const byNum = new Map();
+    for (const fileId of new Set(viewer.pages.map((p) => p.fileId))) {
+      for (const [num, rec] of await savedNumbers(fileId)) byNum.set(`${fileId}:${num}`, rec);
+    }
+    if (viewer.key !== k) return null;
+    numbers = { key: k, byNum };
+    return numbers;
+  }
+
+  // The numbers read on page index, when it was read turned and straightened
+  // as it is now.
+  function numbersOf(index) {
+    const p = viewer.pages[index];
+    const rec = numbers && numbers.key === viewer.key ? numbers.byNum.get(`${p.fileId}:${p.num}`) : null;
+    const now = readingView(viewer, index);
+    return rec && rec.rot === now.rot && (rec.tilt || 0) === now.tilt ? rec : null;
+  }
+
+  function renderFinding() {
+    const el = $('#ix-finding');
+    const job = finding && finding.key === viewer.key ? finding : null;
+    $('#ix-find').textContent = job ? 'Stop finding' : 'Find hymn pages';
+    el.hidden = !job;
+    if (!job) return;
+    if (job.status) {
+      el.textContent = job.status;
+      return;
+    }
+    const n = viewer.pages.length;
+    const done = viewer.pages.reduce((sum, _, i) => sum + (numbersOf(i) ? 1 : 0), 0);
+    const left = job.k ? Math.ceil(((n - done) * (Date.now() - job.t0)) / job.k / 60000) : 0;
+    el.textContent = `Finding hymns: ${done} of ${n} pages read${left ? ` (about ${left} minute${left === 1 ? '' : 's'} left)` : ''}. You can keep reading the music meanwhile.`;
+  }
+
+  $('#ix-find').addEventListener('click', async () => {
+    if (finding && finding.key === viewer.key) {
+      finding.stop = true;
+      finding.status = 'Stopping…';
+      renderFinding();
+      return;
+    }
+    const have = entries().filter((e) => e.kind === 'hymn').map((e) => parseInt(e.n, 10)).filter((n) => n > 0);
+    const v = await formDialog({
+      title: 'Find hymn pages',
+      message: 'Reads every page for the hymn numbers printed on it, then shows you where each hymn starts. Nothing in the index changes until you say so. A whole hymnal takes a while, a few seconds a page: you can keep reading the music meanwhile, and if it’s stopped it carries on where it left off.',
+      fields: [
+        { name: 'from', label: 'From hymn', value: String(have.length ? Math.min(...have) : 1), type: 'number', min: 1 },
+        { name: 'to', label: 'To hymn (the last in the book)', value: have.length ? String(Math.max(...have)) : '', type: 'number', min: 1, autofocus: !have.length },
+      ],
+      ok: 'Find',
+    });
+    if (!v) return;
+    const from = Math.round(Number(v.from));
+    const to = Math.round(Number(v.to));
+    if (!(from >= 1 && to >= from && to - from < 5000)) {
+      toast('Give the first and last hymn numbers of the book, for example 1 and 600.', 3200);
+      return;
+    }
+    findPages(from, to);
+  });
+
+  async function findPages(from, to) {
+    const job = { key: viewer.key, from, to, stop: false, status: '', t0: 0, k: 0 };
+    finding = job;
+    foundFor = null;
+    renderFinding();
+    await Promise.all([loadTexts(), loadNumbers()]);
+    const live = () => !job.stop && viewer.key === job.key && viewer.isOpen;
+    let failed = null;
+    let newTexts = 0;
+    try {
+      for (let i = 0; i < viewer.pages.length && live(); i++) {
+        if (numbersOf(i)) continue;
+        // Not while a page turns or the Pencil writes: they come first.
+        while (live() && (viewer.animating || viewer.ink.busy)) await new Promise((r) => setTimeout(r, 300));
+        if (!live()) break;
+        const p = viewer.pages[i];
+        const view = readingView(viewer, i);
+        const read = await readPageNumbers(viewer, i, {
+          onLoading: (m) => {
+            if (/load|initializ/i.test(m.status) && m.progress < 1) {
+              job.status = `Getting text recognition ready (${Math.round((m.progress || 0) * 100)}%)… The first time, this downloads about 11 MB.`;
+              if (sheet.open) renderFinding();
+            }
+          },
+        });
+        if (viewer.key !== job.key || !numbers) break;
+        const rec = { ...view, ...read.nums };
+        await saveNumbers(p.fileId, p.num, rec);
+        numbers.byNum.set(`${p.fileId}:${p.num}`, rec);
+        // Its words can be searched too, if they weren't yet.
+        if (texts && texts.key === job.key && textOf(p) === undefined) {
+          await saveText(p.fileId, p.num, read.text);
+          texts.byNum.set(`${p.fileId}:${p.num}`, read.text);
+          if (++newTexts % 25 === 0) libraryEdited(); // Google Drive sync sends it on
+        }
+        if (job.t0) job.k++;
+        else job.t0 = Date.now(); // timed from the second page: the first gets text recognition ready
+        job.status = '';
+        if (sheet.open) renderFinding();
+      }
+    } catch (e) {
+      console.warn(e);
+      failed = e;
+    }
+    if (finding === job) finding = null;
+    releaseOcr();
+    if (newTexts) libraryEdited();
+    if (viewer.key !== job.key) return;
+    if (sheet.open) renderFinding();
+    if (failed) {
+      toast(`Finding hymns stopped: ${(failed && failed.message) || failed}. It needs to download text recognition once while online.`, 5000);
+      return;
+    }
+    if (job.stop || !viewer.isOpen) return;
+    if (sheet.open) review(from, to);
+    else {
+      foundFor = { key: job.key, from, to };
+      toast('The hymn numbers have been read. Open the Index to see where the hymns start.', 4500);
+    }
+  }
+
+  // The part of a page shown, top and height, as fractions of it as read.
+  const cropOf = (p) => {
+    const b = shownBox(p.view, 1, 1);
+    return [b.y, b.h];
+  };
+
+  // What the pages say about hymns from to to: shown, and put in the index
+  // if wanted.
+  async function review(from, to) {
+    await loadNumbers();
+    const pages = viewer.pages.map((p, index) => {
+      const rec = numbersOf(index);
+      return rec && { index, ...rec, crop: cropOf(p) };
+    }).filter(Boolean);
+    const wanted = wantedNumbers(entries(), from, to);
+    const changes = hymnChanges(entries(), wanted, findHymnStarts(pages, wanted));
+    const of = (f) => changes.filter(f).map((c) => c.n);
+    const found = of((c) => c.how === 'found');
+    const guessed = of((c) => c.how === 'guessed' && (c.action === 'add' || c.action === 'move'));
+    const moves = of((c) => c.action === 'move');
+    const adds = of((c) => c.action === 'add');
+    const kept = of((c) => c.how !== 'found' && c.action === 'keep');
+    const missing = of((c) => c.action === 'missing');
+    const s = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const items = [
+      moves.length && `${s(moves.length, 'hymn moves', 'hymns move')} to where ${moves.length === 1 ? 'it starts' : 'they start'}.`,
+      adds.length && `${s(adds.length, 'hymn is', 'hymns are')} added to the index.`,
+      guessed.length && `${s(guessed.length, 'hymn’s number wasn’t', 'hymns’ numbers weren’t')} read, but ${guessed.length === 1 ? 'it fits' : 'they fit'} between the hymns either side, one every few pages: <span class="nums">${esc(shortList(guessed))}</span>.`,
+      kept.length && `Not found, so staying where ${kept.length === 1 ? 'it is' : 'they are'}: <span class="nums">${esc(shortList(kept))}</span>.`,
+      missing.length && `Not found, and not in the index: <span class="nums">${esc(shortList(missing))}</span>.`,
+    ].filter(Boolean);
+    const willChange = moves.length + adds.length > 0;
+    const ok = await openModal((dlg, finish) => {
+      dlg.innerHTML = `
+        <div class="modal-body">
+          <h2>Hymn pages</h2>
+          <p>Found ${found.length} of ${wanted.length} hymns where their numbers are printed.${willChange ? '' : ' Everything found is already in the right place.'}</p>
+          ${items.length ? `<ul class="ix-found">${items.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}
+        </div>
+        <div class="modal-actions">
+          ${willChange ? '<button class="btn" data-v="0">Cancel</button>' : ''}
+          <button class="btn primary" data-v="1">${willChange ? 'Update the index' : 'OK'}</button>
+        </div>`;
+      dlg.querySelectorAll('[data-v]').forEach((b) => (b.onclick = () => finish(b.dataset.v === '1')));
+    });
+    if (!ok || !willChange) return;
+    const undo = applyChanges(changes);
+    const again = await openModal((dlg, finish) => {
+      dlg.innerHTML = `
+        <div class="modal-body">
+          <h2>Index updated</h2>
+          <p>${[moves.length && `${s(moves.length, 'hymn', 'hymns')} moved`, adds.length && `${s(adds.length, 'hymn', 'hymns')} added`].filter(Boolean).join(' and ')}. Tap a hymn in the list to check where it goes.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" data-v="undo">Undo</button>
+          <button class="btn primary" data-v="ok">OK</button>
+        </div>`;
+      dlg.querySelectorAll('[data-v]').forEach((b) => (b.onclick = () => finish(b.dataset.v)));
+    });
+    if (again === 'undo') {
+      undo();
+      toast('The index is back as it was.', 2200);
+    }
+  }
+
+  // Puts the hymns where finding says. Returns a function putting them back.
+  function applyChanges(changes) {
+    const now = Date.now();
+    const puts = [];
+    const added = []; // ids to take out again
+    const before = []; // marks as they were
+    for (const c of changes) {
+      if (c.action !== 'add' && c.action !== 'move') continue;
+      const page = viewer.pages[c.to.index];
+      if (!page) continue;
+      if (c.action === 'add') {
+        const id = newMarkId();
+        puts.push({ fileId: page.fileId, num: page.num, mark: { id, kind: 'hymn', n: c.n, title: '', y: c.to.y, at: now } });
+        added.push(id);
+        continue;
+      }
+      const cur = marks.get(c.entry.id);
+      if (!cur) continue;
+      const at = Math.max(now, cur.mark.at + 1);
+      if (cur.fileId === page.fileId && cur.num === page.num) {
+        puts.push({ fileId: page.fileId, num: page.num, mark: { ...cur.mark, y: c.to.y, at } });
+      } else {
+        const id = newMarkId();
+        puts.push({ fileId: cur.fileId, num: cur.num, mark: { id: cur.mark.id, at, gone: true } });
+        puts.push({ fileId: page.fileId, num: page.num, mark: { ...cur.mark, id, y: c.to.y, at } });
+        added.push(id);
+      }
+      before.push(cur);
+    }
+    marks.putMany(puts);
+    return () => marks.batch(() => {
+      if (added.length) marks.remove(added);
+      for (const { fileId, num, mark } of before) marks.put(fileId, num, mark);
+    });
+  }
+
   // ---- Following a tap area ----
 
   // A tap on the music: a tap area there goes where it says. Returns whether
@@ -638,7 +883,9 @@ export function initIndexUi({ viewer, onOpenChange = () => {}, copyLink = () => 
     hideReturn();
     close();
     if (reading) reading.stop = true;
+    if (finding) finding.stop = true;
     texts = null;
+    numbers = null;
     releaseOcr(true);
   }
 

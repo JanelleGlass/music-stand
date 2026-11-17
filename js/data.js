@@ -230,8 +230,9 @@ export async function removeFile(id, tomb = null) {
       }
     };
     if (tomb) s.kv.put(tomb, `sync:tomb:${id}`);
-    // What its pages say (js/ocr.js).
+    // What its pages say, and the numbers on them (js/ocr.js).
     s.kv.delete(IDBKeyRange.bound(`ocr:${id}:`, `ocr:${id}:\uffff`));
+    s.kv.delete(IDBKeyRange.bound(`nums:${id}:`, `nums:${id}:\uffff`));
   });
 }
 

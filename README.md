@@ -103,6 +103,11 @@ including scanned ones.
   first on page 12, one every page (or every 2 pages). Hymns already in the
   index stay where they are; move any that land wrong with the pencil
   button beside them.
+- **Find hymn pages** puts each hymn where it really starts, by reading the
+  hymn numbers printed on the pages (see *Reading scanned pages* below):
+  give the first and last hymn of the book, say 1 and 600. Hymns not in the
+  index yet are added. It's for books where hymns take different numbers of
+  pages, so *Add many* lands many of them wrong.
 - **Paste titles** sets titles from a list with one hymn per line, number
   first or last, as a printed index has them (`245 Amazing Grace`,
   `Abide with Me .... 10`). Type the list, or copy one from a website.
@@ -142,6 +147,18 @@ text recognition (OCR), on the iPad itself:
   Then searching finds the pages with those words, lyrics included, even
   when they're printed in syllables ("A - maz - ing"), under *Words on the
   pages*.
+- **Find where hymns start**: *Find hymn pages* reads every page once
+  (a few seconds a page; you can keep reading the music meanwhile, and it
+  carries on where it stopped) for the hymn numbers printed bigger than the
+  words, going up through the book. Then it shows what it found: how many
+  hymns move, how many are added, and the numbers it couldn't read. Nothing
+  changes until you tap *Update the index*, and *Undo* puts it all back. A
+  hymn whose number it couldn't read goes between the hymns either side when
+  the pages share out evenly (one a page, say); otherwise it stays where it
+  was, to move with the pencil button. Verse numbers, time signatures,
+  "(continued)" headings and the book's own index at the back are left out.
+  Pages it reads can be searched by their words too. If the music finishes
+  reading while the Index is closed, opening it shows what was found.
 - The first use downloads text recognition (about 11 MB), so do it once
   while online; after that it works offline.
 - With Google Drive sync on, what the pages say syncs too (in the notes and
@@ -437,7 +454,8 @@ js/scrubber.js, js/scrub.js  the scroll bar down the right edge (its arithmetic 
 js/index-ui.js               the Index panel, and drawing tap areas on a printed index
 js/marks.js                  the open score's index marks: saving, tap-area layers
 js/index-logic.js            index rules: search, ordering, scroll bar labels, pasted lists, page words (unit tested)
-js/ocr.js                    text recognition of scanned pages (Tesseract.js), and the text kept per page
+js/ocr.js                    text recognition of scanned pages (Tesseract.js), and the text and numbers kept per page
+js/hymn-find.js              finding where hymns start from the numbers on the pages (unit tested)
 js/page-view.js              page adjustments: crop, turn and straighten geometry, finding the music and the staff lines' angle (unit tested)
 js/adjust-ui.js              the Adjust pages screen
 js/views-store.js            saving page adjustments, with the page's markings
