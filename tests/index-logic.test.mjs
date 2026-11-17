@@ -1,7 +1,7 @@
 // Run with: node --test tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fold, sortEntries, findHymn, searchEntries, entryAt, nextNumber, placeLabel, placeIndex, pickLabels, pickLandmarks, parseTitleList, hymnRun, linkAt, boxBetween } from '../js/index-logic.js';
+import { fold, sortEntries, findHymn, hymnFor, searchEntries, entryAt, nextNumber, placeLabel, placeIndex, pickLabels, pickLandmarks, parseTitleList, hymnRun, linkAt, boxBetween } from '../js/index-logic.js';
 import { mergeMarks, normMark, mergePage, pageIsEmpty, restampMarks } from '../js/notes-merge.js';
 
 const hymn = (id, n, title, index, y = 0) => ({ id, kind: 'hymn', n, title, index, num: index + 1, y });
@@ -33,6 +33,50 @@ test('a hymn is found by its number as typed', () => {
   assert.equal(findHymn(book, ' 10A ').id, 'h10a');
   assert.equal(findHymn(book, '11'), null);
   assert.equal(findHymn(book, ''), null);
+});
+
+test('a tap area finds its hymn from the line typed into it, not only the number', () => {
+  const suzuki = [
+    hymn('t1', '1', 'Twinkle, Twinkle, Little Star', 8),
+    hymn('t2', '2', 'French Folk Song', 9),
+    hymn('t8', '8', 'Long, Long Ago', 13),
+  ];
+  // The whole line, number first, with a comma missing.
+  assert.equal(hymnFor(suzuki, '1 Twinkle, Twinkle Little Star').id, 't1');
+  // Just the number, or just the title.
+  assert.equal(hymnFor(suzuki, '1').id, 't1');
+  assert.equal(hymnFor(suzuki, 'twinkle twinkle little star').id, 't1');
+  // The line as printed, running on past the title, with its page number
+  // last: the title wins over the 8.
+  assert.equal(hymnFor(suzuki, 'Twinkle, Twinkle, Little Star Variations, Shinichi Suzuki ....... 8').id, 't1');
+  // Title first, then the number.
+  assert.equal(hymnFor(suzuki, 'French Folk Song 2').id, 't2');
+  // Part of a title, when only one starts with it.
+  assert.equal(hymnFor(suzuki, 'Long, Long').id, 't8');
+  // A number and a title that the index doesn't have.
+  assert.equal(hymnFor(suzuki, '9'), null);
+  assert.equal(hymnFor(suzuki, '9 Allegro'), null);
+  assert.equal(hymnFor(suzuki, ''), null);
+});
+
+test('a tap area line goes by its number when the title is missing or misread', () => {
+  // Hymns added with Add many have no titles.
+  assert.equal(hymnFor([hymn('a', '245', '', 9)], '245 Amazing Grace').id, 'a');
+  // Text recognition misread the title in the index.
+  assert.equal(hymnFor(book, '245 Amazmg Grace').id, 'h245');
+  assert.equal(hymnFor(book, 'Amazmg Grace .... 245').id, 'h245');
+});
+
+test('a tap area line picks the right one of titles alike', () => {
+  // The longer title it starts with, not the shorter.
+  assert.equal(hymnFor(book, 'Joy to the World (descant)').id, 'h10a');
+  assert.equal(hymnFor(book, 'Joy to the World').id, 'h10');
+  // Typed part of two titles: the number settles it, or it's not a guess.
+  assert.equal(hymnFor(book, '10a Joy to').id, 'h10a');
+  const two = [hymn('x', '5', 'Come Thou Fount', 1), hymn('y', '6', 'Come Thou Almighty King', 2)];
+  assert.equal(hymnFor(two, 'Come Thou'), null);
+  // A word or two too short to be a title doesn't match one.
+  assert.equal(hymnFor(two, 'Co'), null);
 });
 
 test('searching a number finds that hymn first, then numbers starting with it', () => {

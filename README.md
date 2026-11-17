@@ -116,7 +116,9 @@ including scanned ones.
   pick any hymn exactly (see *Scroll bar* above).
 - **Tap areas** make a scanned index page clickable. Go to the index page,
   tap *Tap areas*, and drag across a line (say *245 Amazing Grace*). Then
-  type the hymn number it goes to (or a page). Tapping that line while
+  type the hymn number it goes to (or a page). Typing the title, or the
+  whole line as printed, works too: a title in the index finds its hymn
+  even when the commas differ. Tapping that line while
   reading then goes to the hymn, and a **Back** button shows for a few
   seconds to return to the index. Tap an area while drawing to change or
   delete it. ‹ › go through the pages while drawing.
