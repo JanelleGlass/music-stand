@@ -29,6 +29,13 @@ const BAR_HIDE_MS = 3500;
 const LINK_WAIT_MS = 3 * 60 * 1000; // how long a link waits for Google Drive sync to bring its score
 const BOOT_AT = Date.now();
 
+// Safari's own pinch (fingers or trackpad) zooms the whole page, toolbar and
+// all, and a swipe between apps can start one by accident. Scores zoom with
+// their own − / +, so the page never needs it.
+for (const type of ['gesturestart', 'gesturechange']) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
+
 let viewer;
 let camera;
 let library;

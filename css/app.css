@@ -47,6 +47,11 @@ html, body {
   overscroll-behavior: none;
 }
 
+/* The page itself never zooms (scores have their own − / +). Pinching or
+   double-tapping anywhere, including the fingers of a four-finger swipe to
+   another app, can't leave the app zoomed in. Scrolling is unaffected. */
+html { touch-action: pan-x pan-y; }
+
 body { overflow: hidden; }
 
 button, input, select { font: inherit; color: inherit; }
